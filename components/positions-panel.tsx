@@ -221,7 +221,7 @@ export function PositionsPanel({ positions, setPositions, setBalance }: Position
                         ) : (
                           <TrendingDown className="h-4 w-4 text-red-500" />
                         )}
-                        <Badge variant={position.type === "long" ? "default" : "destructive"}>
+                        <Badge variant={position.type === "long" ? "default" : "destructive"} className={position.type === "long" ? "bg-green-500 text-white" : "bg-red-500 text-white"}>
                           {position.type.toUpperCase()}
                         </Badge>
                         <Badge variant="outline" className="text-xs bg-blue-100">
@@ -301,7 +301,7 @@ export function PositionsPanel({ positions, setPositions, setBalance }: Position
                         ) : (
                           <TrendingDown className="h-4 w-4 text-red-500" />
                         )}
-                        <Badge variant={position.type === "long" ? "default" : "destructive"}>
+                        <Badge variant={position.type === "long" ? "default" : "destructive"} className={position.type === "long" ? "bg-green-500 text-white" : "bg-red-500 text-white"}>
                           {position.type.toUpperCase()}
                         </Badge>
                         <Badge variant="outline" className="text-xs">

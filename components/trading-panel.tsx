@@ -196,7 +196,7 @@ export function TradingPanel({ balance, setBalance, positions, setPositions }: T
               {positions.slice(-3).map((position) => (
                 <div key={position.id} className="p-2 border rounded text-sm">
                   <div className="flex items-center justify-between">
-                    <Badge variant={position.type === "long" ? "default" : "destructive"}>
+                    <Badge variant={position.type === "long" ? "default" : "destructive"} className={position.type === "long" ? "bg-green-500 text-white" : "bg-red-500 text-white"}>
                       {position.type.toUpperCase()}
                     </Badge>
                     <span className="font-semibold">{position.leverage}x</span>

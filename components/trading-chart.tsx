@@ -70,6 +70,7 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
   const [maxPositionSize, setMaxPositionSize] = useState("100")
   const [aiStatus, setAiStatus] = useState("Inactivo")
   const [apiError, setApiError] = useState<string | null>(null)
+  const [lastAIPositionTime, setLastAIPositionTime] = useState<number>(0)
 
   // Conectar a Binance WebSocket para datos en tiempo real
   useEffect(() => {
@@ -618,6 +619,20 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
         return { success: false, error: "Acción inválida", positionId: null }
       }
 
+      // Verificar límite de tiempo de 5 minutos (300000 ms)
+      const currentTime = Date.now()
+      const timeSinceLastPosition = currentTime - lastAIPositionTime
+      const fiveMinutes = 5 * 60 * 1000 // 5 minutos en milisegundos
+      
+      if (timeSinceLastPosition < fiveMinutes && lastAIPositionTime > 0) {
+        const remainingTime = Math.ceil((fiveMinutes - timeSinceLastPosition) / 1000)
+        return { 
+          success: false, 
+          error: `Debe esperar ${remainingTime}s antes de la próxima posición IA`, 
+          positionId: null 
+        }
+      }
+
       // Validar datos
       const amount = Number(decision.amount)
       const leverage = Number(decision.leverage)
@@ -665,6 +680,7 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
       // Actualizar posiciones y balance
       setPositions((prev: any[]) => [...prev, newPosition])
       setBalance((prev: number) => prev - finalCost)
+      setLastAIPositionTime(Date.now()) // Actualizar tiempo de última posición IA
 
       console.log(`🤖 IA ejecutó: ${decision.action.toUpperCase()} $${decision.amount} BTC a $${currentPrice}`)
       console.log(`💰 Costo: $${finalCost.toFixed(2)} | Balance restante: $${(balance - finalCost).toFixed(2)}`)
@@ -688,7 +704,7 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
       // Análisis inicial inmediato
       analyzeMarket()
       // Luego cada 30 segundos
-      interval = setInterval(analyzeMarket, 30000)
+      interval = setInterval(analyzeMarket, 300000)
     }
 
     return () => {
@@ -824,6 +840,38 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
       if (showIndicators.ema200) drawEMA(indicators.ema200, "#ef4444", 2)
       if (showIndicators.ema365) drawEMA(indicators.ema365, "#8b5cf6", 2)
 
+      // Dibujar líneas de posiciones de IA
+      const aiPositions = positions.filter((p: any) => p.isAI)
+      aiPositions.forEach((position: any) => {
+        const entryY = priceToY(position.entryPrice)
+        const color = position.type === "long" ? "#10b981" : "#ef4444"
+        
+        // Línea horizontal del precio de entrada
+        ctx.strokeStyle = color
+        ctx.lineWidth = 2
+        ctx.setLineDash([5, 5]) // Línea punteada
+        ctx.beginPath()
+        ctx.moveTo(padding, entryY)
+        ctx.lineTo(width - padding, entryY)
+        ctx.stroke()
+        ctx.setLineDash([]) // Resetear línea punteada
+        
+        // Etiqueta con información de la posición
+        ctx.fillStyle = color
+        ctx.font = "12px sans-serif"
+        const label = `AI ${position.type.toUpperCase()} $${position.entryPrice.toFixed(2)} (${position.leverage}x)`
+        const labelWidth = ctx.measureText(label).width
+        
+        // Fondo para la etiqueta con color según el tipo
+        const backgroundColor = position.type === "long" ? "rgba(16, 185, 129, 0.8)" : "rgba(239, 68, 68, 0.8)"
+        ctx.fillStyle = backgroundColor
+        ctx.fillRect(width - padding - labelWidth - 10, entryY - 15, labelWidth + 8, 20)
+        
+        // Texto de la etiqueta en blanco para mejor contraste
+        ctx.fillStyle = "#ffffff"
+        ctx.fillText(label, width - padding - labelWidth - 6, entryY + 2)
+      })
+
       // Precio actual
       ctx.fillStyle = "#10b981"
       ctx.font = "bold 16px sans-serif"
@@ -831,7 +879,7 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
     } catch (error) {
       console.error("Error dibujando gráfico:", error)
     }
-  }, [candles, indicators, showIndicators, currentPrice, chartOffset, visibleCandleCount])
+  }, [candles, indicators, showIndicators, currentPrice, chartOffset, visibleCandleCount, positions])
 
   // Handlers para navegación con el ratón
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -998,7 +1046,7 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
                   <div className="flex items-center justify-between">
                     <Badge
                       variant={aiDecisions[0].action === "buy" ? "default" : "destructive"}
-                      className="flex items-center space-x-1"
+                      className={`flex items-center space-x-1 ${aiDecisions[0].action === "buy" ? "bg-green-500 text-white" : "bg-red-500 text-white"}`}
                     >
                       {aiDecisions[0].action === "buy" ? (
                         <TrendingUp className="h-3 w-3" />
@@ -1072,7 +1120,7 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
                 {aiDecisions.slice(1, 6).map((decision, index) => (
                   <div key={index} className="flex items-center justify-between p-2 border rounded text-sm">
                     <div className="flex items-center space-x-2">
-                      <Badge variant={decision.action === "buy" ? "default" : "destructive"} className="text-xs">
+                      <Badge variant={decision.action === "buy" ? "default" : "destructive"} className={`text-xs ${decision.action === "buy" ? "bg-green-500 text-white" : "bg-red-500 text-white"}`}>
                         {decision.action.toUpperCase()}
                       </Badge>
                       <span>

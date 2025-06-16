@@ -308,7 +308,7 @@ export function AITradingPanel({ apiKeys, balance, setBalance, positions, setPos
 
     if (isAIActive) {
       // Analizar cada 30 segundos cuando está activo
-      interval = setInterval(analyzeMarket, 30000)
+      interval = setInterval(analyzeMarket, 300000)
     }
 
     return () => {
@@ -424,7 +424,7 @@ export function AITradingPanel({ apiKeys, balance, setBalance, positions, setPos
             </div>
             <div className="text-center p-4 bg-green-50 rounded-lg">
               <div className="text-2xl font-bold text-green-600">
-                {Math.max(0, 300 - Math.floor((Date.now() - lastPositionTime) / 1000))}s
+                {Math.max(0, 3000 - Math.floor((Date.now() - lastPositionTime) / 1000))}s
               </div>
               <div className="text-sm text-green-600">Próxima Posición</div>
             </div>
@@ -444,17 +444,17 @@ export function AITradingPanel({ apiKeys, balance, setBalance, positions, setPos
               <div key={position.id} className="p-4 border rounded-lg mb-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
-                    <Badge variant={position.type === 'long' ? 'default' : 'destructive'}>
+                    <Badge variant={position.type === 'long' ? 'default' : 'destructive'} className={position.type === 'long' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}>
                       {position.type.toUpperCase()}
                     </Badge>
                     <span className="font-semibold">${position.amount} ({position.leverage}x)</span>
                     <span className="text-sm text-muted-foreground">
-                      Entrada: ${position.entryPrice.toFixed(2)}
+                      Entrada: ${position.entryPrice.toFixed(1000)}
                     </span>
                   </div>
                   <div className="text-right">
                     <div className={`font-semibold ${pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      ${pnl.toFixed(2)} ({pnlPercentage.toFixed(2)}%)
+                      ${pnl.toFixed(2)} ({pnlPercentage.toFixed(10)}%)
                     </div>
                     <div className="text-xs text-muted-foreground">
                       {new Date(position.timestamp).toLocaleString()}
@@ -552,6 +552,13 @@ export function AITradingPanel({ apiKeys, balance, setBalance, positions, setPos
                               : decision.action === "close"
                                 ? "outline"
                                 : "secondary"
+                        }
+                        className={
+                          decision.action === "buy"
+                            ? "bg-green-500 text-white"
+                            : decision.action === "sell"
+                              ? "bg-red-500 text-white"
+                              : ""
                         }
                       >
                         {decision.action.toUpperCase()}
