@@ -21,8 +21,8 @@ interface Position {
 
 interface PositionsPanelProps {
   positions: Position[]
-  setPositions: (positions: Position[]) => void
-  setBalance: (balance: number) => void
+  setPositions: React.Dispatch<React.SetStateAction<Position[]>>
+  setBalance: React.Dispatch<React.SetStateAction<number>>
 }
 
 export function PositionsPanel({ positions, setPositions, setBalance }: PositionsPanelProps) {
@@ -141,8 +141,8 @@ export function PositionsPanel({ positions, setPositions, setBalance }: Position
       }
 
       // Actualizar balance y posiciones
-      setBalance((prev) => prev + initialInvestment + profit)
-      setPositions(positions.filter((p) => p.id !== positionId))
+      setBalance((prev: number) => prev + initialInvestment + profit)
+      setPositions((prev: Position[]) => prev.filter((p: Position) => p.id !== positionId))
 
       console.log(`Posición cerrada: ${profit > 0 ? "Ganancia" : "Pérdida"} de $${profit.toFixed(2)}`)
     } catch (error) {

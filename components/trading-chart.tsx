@@ -12,9 +12,9 @@ import { Label } from "@/components/ui/label"
 interface TradingChartProps {
   apiKeys: { openai: string }
   balance: number
-  setBalance: (balance: number) => void
+  setBalance: React.Dispatch<React.SetStateAction<number>>
   positions: any[]
-  setPositions: (positions: any[]) => void
+  setPositions: React.Dispatch<React.SetStateAction<any[]>>
 }
 
 interface Candle {
@@ -56,6 +56,12 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
     rsi: false,
     volume: true,
   })
+
+  // Estados para navegación del gráfico
+  const [chartOffset, setChartOffset] = useState(0)
+  const [isDragging, setIsDragging] = useState(false)
+  const [lastMouseX, setLastMouseX] = useState(0)
+  const [visibleCandleCount, setVisibleCandleCount] = useState(100)
 
   // Estados de IA
   const [isAIActive, setIsAIActive] = useState(false)
@@ -206,7 +212,7 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
 
     ema[0] = validPrices[0]
     for (let i = 1; i < validPrices.length; i++) {
-      const currentEMA = validPrices[i] * multiplier + ema[i - 1] * (1 - multiplier)
+      const currentEMA: number = validPrices[i] * multiplier + ema[i - 1] * (1 - multiplier)
       ema[i] = isNaN(currentEMA) ? ema[i - 1] : currentEMA
     }
 
@@ -657,8 +663,8 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
       }
 
       // Actualizar posiciones y balance
-      setPositions((prev) => [...prev, newPosition])
-      setBalance((prev) => prev - finalCost)
+      setPositions((prev: any[]) => [...prev, newPosition])
+      setBalance((prev: number) => prev - finalCost)
 
       console.log(`🤖 IA ejecutó: ${decision.action.toUpperCase()} $${decision.amount} BTC a $${currentPrice}`)
       console.log(`💰 Costo: $${finalCost.toFixed(2)} | Balance restante: $${(balance - finalCost).toFixed(2)}`)
@@ -707,8 +713,10 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
       const chartWidth = width - padding * 2
       const chartHeight = height - padding * 2
 
-      // Calcular rangos de precios
-      const visibleCandles = candles.slice(-100) // Mostrar últimas 100 velas
+      // Calcular rangos de precios con navegación
+      const startIndex = Math.max(0, candles.length - visibleCandleCount - chartOffset)
+      const endIndex = Math.max(visibleCandleCount, candles.length - chartOffset)
+      const visibleCandles = candles.slice(startIndex, endIndex)
 
       // Validar que haya velas visibles
       if (visibleCandles.length === 0) return
@@ -740,22 +748,14 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
         return padding + ((maxPrice - price) / priceRange) * chartHeight
       }
 
-      // Dibujar grid
-      ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted").trim() || "#e5e7eb"
-      ctx.lineWidth = 1
-
-      // Grid horizontal
+      // Dibujar solo etiquetas de precio (sin líneas del grid)
+      ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--foreground").trim() || "#000"
+      ctx.font = "12px sans-serif"
+      
+      // Etiquetas de precio sin líneas horizontales
       for (let i = 0; i <= 10; i++) {
         const y = padding + (chartHeight / 10) * i
-        ctx.beginPath()
-        ctx.moveTo(padding, y)
-        ctx.lineTo(width - padding, y)
-        ctx.stroke()
-
-        // Etiquetas de precio
         const price = maxPrice - (priceRange / 10) * i
-        ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--foreground").trim() || "#000"
-        ctx.font = "12px sans-serif"
         ctx.fillText(price.toFixed(2), 10, y + 4)
       }
 
@@ -831,7 +831,53 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
     } catch (error) {
       console.error("Error dibujando gráfico:", error)
     }
-  }, [candles, indicators, showIndicators, currentPrice])
+  }, [candles, indicators, showIndicators, currentPrice, chartOffset, visibleCandleCount])
+
+  // Handlers para navegación con el ratón
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    setIsDragging(true)
+    setLastMouseX(e.clientX)
+  }
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDragging) return
+    
+    const deltaX = e.clientX - lastMouseX
+    const candlesToMove = Math.round(deltaX / 8) // Sensibilidad del movimiento
+    
+    setChartOffset(prev => {
+      const newOffset = prev - candlesToMove
+      const maxOffset = Math.max(0, candles.length - visibleCandleCount)
+      return Math.max(0, Math.min(maxOffset, newOffset))
+    })
+    
+    setLastMouseX(e.clientX)
+  }
+
+  const handleMouseUp = () => {
+    setIsDragging(false)
+  }
+
+  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
+    e.preventDefault()
+    
+    if (e.ctrlKey) {
+      // Zoom con Ctrl + rueda
+      const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9
+      setVisibleCandleCount(prev => {
+        const newCount = Math.round(prev * zoomFactor)
+        return Math.max(20, Math.min(500, newCount))
+      })
+    } else {
+      // Navegación horizontal con rueda
+      const scrollAmount = e.deltaY > 0 ? 5 : -5
+      setChartOffset(prev => {
+        const newOffset = prev + scrollAmount
+        const maxOffset = Math.max(0, candles.length - visibleCandleCount)
+        return Math.max(0, Math.min(maxOffset, newOffset))
+      })
+    }
+  }
 
   return (
     <Card className="h-full p-4">
@@ -874,12 +920,21 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
         </div>
       )}
 
+      <div className="text-sm text-muted-foreground mb-2">
+        💡 Arrastra para navegar • Rueda del ratón para desplazar • Ctrl + Rueda para zoom
+      </div>
+
       <canvas
         ref={canvasRef}
         width={800}
         height={400}
-        className="w-full border rounded"
+        className="w-full border rounded cursor-grab active:cursor-grabbing"
         style={{ maxHeight: "400px" }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onWheel={handleWheel}
       />
 
       {/* Panel de IA integrado - VERSIÓN COMPLETA */}

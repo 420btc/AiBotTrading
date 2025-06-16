@@ -21,9 +21,9 @@ interface Position {
 
 interface TradingPanelProps {
   balance: number
-  setBalance: (balance: number) => void
+  setBalance: React.Dispatch<React.SetStateAction<number>>
   positions: Position[]
-  setPositions: (positions: Position[]) => void
+  setPositions: React.Dispatch<React.SetStateAction<Position[]>>
 }
 
 export function TradingPanel({ balance, setBalance, positions, setPositions }: TradingPanelProps) {
@@ -76,8 +76,8 @@ export function TradingPanel({ balance, setBalance, positions, setPositions }: T
         timestamp: Date.now(),
       }
 
-      setPositions([...positions, newPosition])
-      setBalance(balance - totalCost)
+      setPositions((prev: Position[]) => [...prev, newPosition])
+      setBalance((prev: number) => prev - totalCost)
       setAmount("")
 
       console.log(`Orden ejecutada: ${positionType.toUpperCase()} ${orderAmount} BTC a $${newPosition.entryPrice}`)

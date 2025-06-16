@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { TradingChart } from "@/components/trading-chart"
 import { TradingPanel } from "@/components/trading-panel"
 import { IndicatorsPanel } from "@/components/indicators-panel"
@@ -11,11 +11,51 @@ import { Moon, Sun, Settings, TrendingUp, BarChart3 } from "lucide-react"
 import { useTheme } from "next-themes"
 
 export default function TradingPlatform() {
-  const [activeTab, setActiveTab] = useState("chart")
-  const [balance, setBalance] = useState(500)
-  const [positions, setPositions] = useState([])
-  const [apiKeys, setApiKeys] = useState({ openai: "" })
+  const [activeTab, setActiveTab] = useState<string>("chart")
+  const [balance, setBalance] = useState<number>(500)
+  const [positions, setPositions] = useState<any[]>([])
+  const [apiKeys, setApiKeys] = useState<{ openai: string }>({ openai: "" })
   const { theme, setTheme } = useTheme()
+
+  // Cargar datos del localStorage al inicializar
+  useEffect(() => {
+    const savedBalance = localStorage.getItem('tradingBalance')
+    const savedPositions = localStorage.getItem('tradingPositions')
+    const savedApiKeys = localStorage.getItem('tradingApiKeys')
+
+    if (savedBalance) {
+      setBalance(parseFloat(savedBalance))
+    }
+    if (savedPositions) {
+      try {
+        setPositions(JSON.parse(savedPositions))
+      } catch (error) {
+        console.error('Error al cargar posiciones:', error)
+      }
+    }
+    if (savedApiKeys) {
+      try {
+        setApiKeys(JSON.parse(savedApiKeys))
+      } catch (error) {
+        console.error('Error al cargar API keys:', error)
+      }
+    }
+  }, [])
+
+  // Guardar balance en localStorage cuando cambie
+  useEffect(() => {
+    localStorage.setItem('tradingBalance', balance.toString())
+  }, [balance])
+
+  // Guardar posiciones en localStorage cuando cambien
+  useEffect(() => {
+    localStorage.setItem('tradingPositions', JSON.stringify(positions))
+  }, [positions])
+
+  // Guardar API keys en localStorage cuando cambien
+  useEffect(() => {
+    localStorage.setItem('tradingApiKeys', JSON.stringify(apiKeys))
+  }, [apiKeys])
 
   const tabs = [
     { id: "chart", label: "Gráfico", icon: TrendingUp },
