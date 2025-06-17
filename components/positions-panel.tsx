@@ -1,12 +1,14 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, lazy, Suspense, useCallback, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
+import { AlertTriangle, Bot } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { X, TrendingUp, TrendingDown, AlertTriangle, Bot } from "lucide-react"
 
-interface Position {
+// Importar dinámicamente el componente PositionCard
+const PositionCard = lazy(() => import('./position-card'));
+
+export interface Position {
   id: string
   type: "long" | "short"
   amount: number
@@ -16,7 +18,8 @@ interface Position {
   isAI?: boolean
   aiReasoning?: string
   confidence?: number
-  pnl?: number
+  pnl?: number,
+  liquidationPrice?: number
 }
 
 interface PositionsPanelProps {
@@ -27,138 +30,263 @@ interface PositionsPanelProps {
 
 export function PositionsPanel({ positions, setPositions, setBalance }: PositionsPanelProps) {
   const [currentPrice, setCurrentPrice] = useState(50000)
-  const [positionsWithPnL, setPositionsWithPnL] = useState<Position[]>([])
+  const [positionsWithPnL, setPositionsWithPnL] = useState<Array<Position & { liquidationPrice?: number }>>([])
   const [lastUpdateTime, setLastUpdateTime] = useState<Date | null>(null)
   const [updateError, setUpdateError] = useState<string | null>(null)
 
-  // Función mejorada para actualizar precios con mejor manejo de errores
-  useEffect(() => {
-    const updatePrices = async () => {
-      try {
-        // Intentar obtener el precio actual de Bitcoin
-        const response = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT")
-
-        // Verificar si la respuesta es exitosa
-        if (!response.ok) {
-          throw new Error(`Error en la API: ${response.status} ${response.statusText}`)
-        }
-
-        const data = await response.json()
-
-        // Validar que la respuesta tenga la estructura esperada
-        if (!data || !data.price) {
-          throw new Error("Formato de respuesta inválido")
-        }
-
-        // Convertir el precio a número y validar
-        const price = Number.parseFloat(data.price)
-
-        if (isNaN(price) || !isFinite(price) || price <= 0) {
-          throw new Error("Precio inválido recibido")
-        }
-
-        // Actualizar el precio y limpiar errores previos
-        setCurrentPrice(price)
-        setUpdateError(null)
-        setLastUpdateTime(new Date())
-
-        // Calcular PnL para cada posición con validaciones
-        const updatedPositions = positions.map((position) => {
-          try {
-            // Validar datos de la posición
-            if (
-              isNaN(position.entryPrice) ||
-              position.entryPrice <= 0 ||
-              isNaN(position.amount) ||
-              position.amount <= 0 ||
-              isNaN(position.leverage) ||
-              position.leverage <= 0
-            ) {
-              return { ...position, pnl: 0 }
-            }
-
-            // Calcular diferencia de precio según tipo de posición
-            const priceDiff = position.type === "long" ? price - position.entryPrice : position.entryPrice - price
-
-            // Calcular PnL con validaciones
-            const pnlPercentage = (priceDiff / position.entryPrice) * 100
-            const pnl = ((position.amount * pnlPercentage) / 100) * position.leverage
-
-            return {
-              ...position,
-              pnl: isNaN(pnl) ? 0 : pnl,
-            }
-          } catch (err) {
-            console.error("Error calculando PnL para posición:", err)
-            return { ...position, pnl: 0 }
-          }
-        })
-
-        setPositionsWithPnL(updatedPositions)
-      } catch (error) {
-        // Manejar el error y mostrar mensaje
-        console.error("Error actualizando precios:", error)
-        setUpdateError(error instanceof Error ? error.message : "Error desconocido")
-
-        // Usar el último precio conocido o un valor predeterminado
-        // No actualizamos el precio aquí para mantener el último valor válido
-
-        // Actualizar posiciones con el último precio conocido
-        const updatedPositions = positions.map((position) => {
-          return { ...position, pnl: position.pnl || 0 }
-        })
-
-        setPositionsWithPnL(updatedPositions)
+  // Función para calcular el precio de liquidación
+  const updateLiquidationPrices = (positions: Position[]) => {
+    return positions.map(pos => {
+      const { type, entryPrice, leverage } = pos;
+      let liquidationPrice: number;
+      
+      if (leverage <= 1) {
+        // Si el apalancamiento es 1x o menor, no hay precio de liquidación (no hay margen de mantenimiento)
+        liquidationPrice = type === 'long' ? 0 : Infinity;
+      } else {
+        // Fórmula simplificada para el precio de liquidación
+        // Para largos: Precio de entrada * (1 - 1/apalancamiento)
+        // Para cortos: Precio de entrada * (1 + 1/apalancamiento)
+        liquidationPrice = type === 'long' 
+          ? entryPrice * (1 - 1/leverage)
+          : entryPrice * (1 + 1/leverage);
+        
+        liquidationPrice = Math.max(0, liquidationPrice); // Aseguramos que no sea negativo
       }
+      
+      return {
+        ...pos,
+        liquidationPrice
+      };
+    });
+  };
+  
+  // Efecto para inicializar los precios de liquidación cuando cambian las posiciones
+  useEffect(() => {
+    const updatedPositions = updateLiquidationPrices(positions);
+    setPositionsWithPnL(updatedPositions);
+  }, [positions]);
+
+  // Función para verificar si una posición debe ser liquidada
+  const shouldLiquidatePosition = useCallback((position: Position, currentPrice: number): boolean => {
+    if (!position.liquidationPrice) return false;
+    
+    if (position.type === 'long') {
+      // Para posiciones largas, se liquida si el precio baja al nivel de liquidación
+      return currentPrice <= position.liquidationPrice;
+    } else {
+      // Para posiciones cortas, se liquida si el precio sube al nivel de liquidación
+      return currentPrice >= position.liquidationPrice;
     }
+  }, []);
 
-    // Ejecutar la actualización inmediatamente
-    updatePrices()
+  // Función para liquidar una posición
+  const liquidatePosition = useCallback((positionId: string) => {
+    setPositions(prevPositions => {
+      const position = prevPositions.find(p => p.id === positionId);
+      if (!position) return prevPositions;
 
-    // Configurar intervalo para actualizaciones periódicas
-    const interval = setInterval(updatePrices, 5000)
+      // Calcular pérdida total (el margen inicial se pierde)
+      const initialMargin = position.amount / position.leverage;
+      const loss = -initialMargin; // Se pierde todo el margen inicial
 
+      // Actualizar el balance
+      setBalance(prev => prev + loss);
+
+      console.log(`Posición ${positionId} liquidada automáticamente. Pérdida: $${Math.abs(loss).toFixed(2)}`);
+      
+      // Retornar las posiciones sin la posición liquidada
+      return prevPositions.filter(p => p.id !== positionId);
+    });
+  }, [setBalance]);
+
+  // Función para calcular el PnL de una posición
+  const calculatePositionPnL = (position: Position, currentPrice: number): number => {
+    try {
+      // Validar datos de la posición
+      if (
+        isNaN(position.entryPrice) ||
+        position.entryPrice <= 0 ||
+        isNaN(position.amount) ||
+        position.amount <= 0 ||
+        isNaN(position.leverage) ||
+        position.leverage <= 0
+      ) {
+        return 0;
+      }
+      
+      // Calcular diferencia de precio según tipo de posición
+      const priceDiff = position.type === "long" 
+        ? currentPrice - position.entryPrice 
+        : position.entryPrice - currentPrice;
+
+      // Calcular PnL
+      const pnlPercentage = (priceDiff / position.entryPrice) * 100;
+      const pnl = ((position.amount * pnlPercentage) / 100) * position.leverage;
+      
+      return isFinite(pnl) ? pnl : 0;
+    } catch (err) {
+      console.error("Error calculando PnL para posición:", err);
+      return 0;
+    }
+  };
+
+  // Función mejorada para actualizar precios con mejor manejo de errores
+  const updatePrices = useCallback(async () => {
+    try {
+      // Intentar obtener el precio actual de Bitcoin
+      const response = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT");
+
+      // Verificar si la respuesta es exitosa
+      if (!response.ok) {
+        throw new Error(`Error en la API: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      // Validar que la respuesta tenga la estructura esperada
+      if (!data || !data.price) {
+        throw new Error("Formato de respuesta inválido");
+      }
+
+      // Convertir el precio a número y validar
+      const price = Number.parseFloat(data.price);
+
+      if (isNaN(price) || !isFinite(price) || price <= 0) {
+        throw new Error("Precio inválido recibido");
+      }
+
+      // Actualizar el precio y limpiar errores previos
+      setCurrentPrice(price);
+      setUpdateError(null);
+      setLastUpdateTime(new Date());
+
+      // Actualizar posiciones con el nuevo PnL
+      setPositions(prevPositions => {
+        const updatedPositions = prevPositions.map(position => {
+          // Calcular PnL para cada posición
+          const pnl = calculatePositionPnL(position, price);
+          
+          // Verificar si la posición debe ser liquidada
+          if (shouldLiquidatePosition(position, price)) {
+            // Si la posición debe ser liquidada, calcular la pérdida
+            const initialMargin = position.amount / position.leverage;
+            const loss = -initialMargin;
+            
+            // Actualizar el balance
+            setBalance(prev => prev + loss);
+            
+            console.log(`Posición ${position.id} liquidada automáticamente. Pérdida: $${Math.abs(loss).toFixed(2)}`);
+            
+            // Retornar null para filtrar esta posición
+            return null;
+          }
+          
+          // Retornar la posición actualizada con el nuevo PnL
+          return {
+            ...position,
+            pnl,
+            liquidationPrice: position.liquidationPrice || 
+              (position.type === 'long' 
+                ? position.entryPrice * (1 - 1/position.leverage)
+                : position.entryPrice * (1 + 1/position.leverage))
+          };
+        }).filter(Boolean) as Position[]; // Filtrar posiciones nulas (las liquidadas)
+
+
+        return updatedPositions;
+      });
+
+      // Actualizar el estado de positionsWithPnL para reflejar los cambios
+      setPositionsWithPnL(prevPositions => {
+        return prevPositions
+          .filter(pos => positions.some(p => p.id === pos.id)) // Solo mantener posiciones que aún existen
+          .map(pos => {
+            const position = positions.find(p => p.id === pos.id);
+            if (!position) return pos;
+            
+            return {
+              ...pos,
+              pnl: calculatePositionPnL(position, price),
+              liquidationPrice: position.liquidationPrice
+            };
+          });
+      });
+    } catch (err) {
+      console.error("Error actualizando precios:", err);
+      setUpdateError(err instanceof Error ? err.message : "Error desconocido al actualizar precios");
+    }
+  }, [positions, shouldLiquidatePosition]);
+
+  // Efecto para actualizar precios periódicamente
+  useEffect(() => {
+    // Actualizar inmediatamente al montar
+    updatePrices();
+    
+    // Configurar intervalo para actualizaciones cada segundo (1000ms)
+    const intervalId = setInterval(updatePrices, 1000);
+    
     // Limpiar intervalo al desmontar
-    return () => clearInterval(interval)
-  }, [positions])
+    return () => clearInterval(intervalId);
+  }, [updatePrices]);
+  
+  // Calcular posiciones y PnL total de manera eficiente
+  const { aiPositions, manualPositions, totalPnL } = useMemo(() => {
+    const ai: Position[] = [];
+    const manual: Position[] = [];
+    let total = 0;
+
+    positionsWithPnL.forEach(pos => {
+      // Calcular PnL para la posición actual
+      const pnl = pos.pnl || 0;
+      if (!isNaN(pnl)) {
+        total += pnl;
+      }
+      
+      // Clasificar la posición
+      if (pos.isAI) {
+        ai.push(pos);
+      } else {
+        manual.push(pos);
+      }
+    });
+    
+    return { 
+      aiPositions: ai, 
+      manualPositions: manual, 
+      totalPnL: total 
+    };
+  }, [positionsWithPnL]);
 
   // Función mejorada para cerrar posición con validaciones
-  const closePosition = (positionId: string) => {
+  const closePosition = useCallback((positionId: string) => {
     try {
-      const position = positionsWithPnL.find((p) => p.id === positionId)
+      const position = positionsWithPnL.find((p: Position) => p.id === positionId);
       if (!position) {
-        console.error("Posición no encontrada:", positionId)
-        return
+        console.error("Posición no encontrada:", positionId);
+        return;
       }
 
-      const profit = position.pnl || 0
-      const initialInvestment = position.amount / position.leverage
+      const profit = position.pnl || 0;
+      const initialInvestment = position.amount / position.leverage;
 
       // Validar cálculos
       if (isNaN(profit) || isNaN(initialInvestment) || initialInvestment <= 0) {
-        console.error("Cálculos inválidos al cerrar posición:", { profit, initialInvestment })
-        return
+        console.error("Cálculos inválidos al cerrar posición:", { profit, initialInvestment });
+        return;
       }
 
       // Actualizar balance y posiciones
-      setBalance((prev: number) => prev + initialInvestment + profit)
-      setPositions((prev: Position[]) => prev.filter((p: Position) => p.id !== positionId))
+      setBalance((prev: number) => prev + initialInvestment + profit);
+      setPositions((prev: Position[]) => prev.filter((p: Position) => p.id !== positionId));
 
-      console.log(`Posición cerrada: ${profit > 0 ? "Ganancia" : "Pérdida"} de $${profit.toFixed(2)}`)
+      console.log(`Posición cerrada: ${profit > 0 ? "Ganancia" : "Pérdida"} de $${profit.toFixed(2)}`);
     } catch (error) {
-      console.error("Error al cerrar posición:", error)
+      console.error("Error al cerrar posición:", error);
     }
-  }
+  }, [positionsWithPnL, setBalance, setPositions]);
 
-  // Calcular PnL total con validación
-  const totalPnL = positionsWithPnL.reduce((sum, pos) => {
-    const pnl = pos.pnl || 0
-    return isNaN(pnl) ? sum : sum + pnl
-  }, 0)
-
-  // Separar posiciones de IA y manuales
-  const aiPositions = positionsWithPnL.filter((pos) => pos.isAI)
-  const manualPositions = positionsWithPnL.filter((pos) => !pos.isAI)
+  // Las variables ya están definidas en el useMemo anterior
 
   return (
     <Card className="h-full">
@@ -212,76 +340,16 @@ export function PositionsPanel({ positions, setPositions, setBalance }: Position
                   <Bot className="h-4 w-4" />
                   <span>Posiciones de IA ({aiPositions.length})</span>
                 </div>
-                {aiPositions.map((position) => (
-                  <div key={position.id} className="p-3 border-2 border-blue-200 rounded-lg space-y-2 bg-blue-50/50">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        {position.type === "long" ? (
-                          <TrendingUp className="h-4 w-4 text-green-500" />
-                        ) : (
-                          <TrendingDown className="h-4 w-4 text-red-500" />
-                        )}
-                        <Badge variant={position.type === "long" ? "default" : "destructive"} className={position.type === "long" ? "bg-green-500 text-white" : "bg-red-500 text-white"}>
-                          {position.type.toUpperCase()}
-                        </Badge>
-                        <Badge variant="outline" className="text-xs bg-blue-100">
-                          <Bot className="h-3 w-3 mr-1" />
-                          IA
-                        </Badge>
-                        {position.confidence && (
-                          <Badge variant="outline" className="text-xs">
-                            {position.confidence}%
-                          </Badge>
-                        )}
-                      </div>
-                      <Button size="sm" variant="ghost" onClick={() => closePosition(position.id)}>
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div>
-                        <span className="text-muted-foreground">Cantidad:</span>
-                        <div className="font-semibold">${position.amount}</div>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Apalancamiento:</span>
-                        <div className="font-semibold">{position.leverage}x</div>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Precio entrada:</span>
-                        <div className="font-semibold">${position.entryPrice.toFixed(2)}</div>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">PnL:</span>
-                        <div
-                          className={`font-semibold ${(position.pnl || 0) >= 0 ? "text-green-500" : "text-red-500"}`}
-                        >
-                          {(position.pnl || 0) >= 0 ? "+" : ""}${(position.pnl || 0).toFixed(2)}
-                        </div>
-                      </div>
-                    </div>
-
-                    {position.aiReasoning && (
-                      <div className="text-xs text-muted-foreground bg-white p-2 rounded border">
-                        <strong>Análisis IA:</strong> {position.aiReasoning.substring(0, 100)}...
-                      </div>
-                    )}
-
-                    <div className="text-xs text-muted-foreground">
-                      Abierta: {new Date(position.timestamp).toLocaleString()}
-                    </div>
-
-                    <Button
-                      size="sm"
-                      onClick={() => closePosition(position.id)}
-                      variant={position.type === "long" ? "destructive" : "default"}
-                      className="w-full"
-                    >
-                      Cerrar Posición IA
-                    </Button>
-                  </div>
-                ))}
+                <Suspense fallback={<div>Cargando posiciones...</div>}>
+                  {aiPositions.map((position) => (
+                    <PositionCard 
+                      key={position.id} 
+                      position={position} 
+                      onClose={closePosition}
+                      isAI={true}
+                    />
+                  ))}
+                </Suspense>
               </div>
             )}
 
@@ -292,64 +360,16 @@ export function PositionsPanel({ positions, setPositions, setBalance }: Position
                 <div className="flex items-center space-x-2 text-sm font-semibold">
                   <span>👤 Posiciones Manuales ({manualPositions.length})</span>
                 </div>
-                {manualPositions.map((position) => (
-                  <div key={position.id} className="p-3 border rounded-lg space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        {position.type === "long" ? (
-                          <TrendingUp className="h-4 w-4 text-green-500" />
-                        ) : (
-                          <TrendingDown className="h-4 w-4 text-red-500" />
-                        )}
-                        <Badge variant={position.type === "long" ? "default" : "destructive"} className={position.type === "long" ? "bg-green-500 text-white" : "bg-red-500 text-white"}>
-                          {position.type.toUpperCase()}
-                        </Badge>
-                        <Badge variant="outline" className="text-xs">
-                          Manual
-                        </Badge>
-                      </div>
-                      <Button size="sm" variant="ghost" onClick={() => closePosition(position.id)}>
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div>
-                        <span className="text-muted-foreground">Cantidad:</span>
-                        <div className="font-semibold">${position.amount}</div>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Apalancamiento:</span>
-                        <div className="font-semibold">{position.leverage}x</div>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Precio entrada:</span>
-                        <div className="font-semibold">${position.entryPrice.toFixed(2)}</div>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">PnL:</span>
-                        <div
-                          className={`font-semibold ${(position.pnl || 0) >= 0 ? "text-green-500" : "text-red-500"}`}
-                        >
-                          {(position.pnl || 0) >= 0 ? "+" : ""}${(position.pnl || 0).toFixed(2)}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="text-xs text-muted-foreground">
-                      Abierta: {new Date(position.timestamp).toLocaleString()}
-                    </div>
-
-                    <Button
-                      size="sm"
-                      onClick={() => closePosition(position.id)}
-                      variant={position.type === "long" ? "destructive" : "default"}
-                      className="w-full"
-                    >
-                      Cerrar Posición
-                    </Button>
-                  </div>
-                ))}
+                <Suspense fallback={<div>Cargando posiciones...</div>}>
+                  {manualPositions.map((position) => (
+                    <PositionCard 
+                      key={position.id} 
+                      position={position} 
+                      onClose={closePosition}
+                      isAI={false}
+                    />
+                  ))}
+                </Suspense>
               </div>
             )}
           </>
