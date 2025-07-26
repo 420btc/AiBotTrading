@@ -77,7 +77,7 @@ export function SettingsPanel({ apiKeys, setApiKeys, clearApiKeys }: SettingsPan
       } else {
         setTestResult(`❌ Error: ${result.error}`)
       }
-    } catch (error) {
+    } catch {
       setTestResult("❌ Error de conexión")
     } finally {
       setIsTestingAPI(false)
@@ -110,7 +110,7 @@ export function SettingsPanel({ apiKeys, setApiKeys, clearApiKeys }: SettingsPan
       } else {
         setBingxTestResult(`❌ Error: ${result.error}`)
       }
-    } catch (error) {
+    } catch {
       setBingxTestResult("❌ Error de conexión con BingX")
     } finally {
       setIsTestingBingX(false)

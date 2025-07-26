@@ -80,25 +80,25 @@ export function PositionsPanel({ positions, setPositions, setBalance }: Position
     }
   }, []);
 
-  // Función para liquidar una posición
-  const liquidatePosition = useCallback((positionId: string) => {
-    setPositions(prevPositions => {
-      const position = prevPositions.find(p => p.id === positionId);
-      if (!position) return prevPositions;
+  // Función para liquidar una posición (comentada porque no se usa actualmente)
+  // const liquidatePosition = useCallback((positionId: string) => {
+  //   setPositions(prevPositions => {
+  //     const position = prevPositions.find(p => p.id === positionId);
+  //     if (!position) return prevPositions;
 
-      // Calcular pérdida total (el margen inicial se pierde)
-      const initialMargin = position.amount / position.leverage;
-      const loss = -initialMargin; // Se pierde todo el margen inicial
+  //     // Calcular pérdida total (el margen inicial se pierde)
+  //     const initialMargin = position.amount / position.leverage;
+  //     const loss = -initialMargin; // Se pierde todo el margen inicial
 
-      // Actualizar el balance
-      setBalance(prev => prev + loss);
+  //     // Actualizar el balance
+  //     setBalance(prev => prev + loss);
 
-      console.log(`Posición ${positionId} liquidada automáticamente. Pérdida: $${Math.abs(loss).toFixed(2)}`);
+  //     console.log(`Posición ${positionId} liquidada automáticamente. Pérdida: $${Math.abs(loss).toFixed(2)}`);
       
-      // Retornar las posiciones sin la posición liquidada
-      return prevPositions.filter(p => p.id !== positionId);
-    });
-  }, [setBalance]);
+  //     // Retornar las posiciones sin la posición liquidada
+  //     return prevPositions.filter(p => p.id !== positionId);
+  //   });
+  // }, [setBalance, setPositions]);
 
   // Función para calcular el PnL de una posición
   const calculatePositionPnL = (position: Position, currentPrice: number): number => {
@@ -216,7 +216,7 @@ export function PositionsPanel({ positions, setPositions, setBalance }: Position
       console.error("Error actualizando precios:", err);
       setUpdateError(err instanceof Error ? err.message : "Error desconocido al actualizar precios");
     }
-  }, [positions, shouldLiquidatePosition]);
+  }, [positions, shouldLiquidatePosition, setBalance, setPositions]);
 
   // Efecto para actualizar precios periódicamente
   useEffect(() => {
