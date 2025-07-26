@@ -87,7 +87,6 @@ export default function TradingPlatform() {
           <div className="flex-1">
             {activeTab === "chart" && (
               <div className="space-y-6">
-                <TradingChart apiKeys={apiKeys} />
                 <AIBingXPanel
                   apiKeys={apiKeys}
                   balance={balance}
@@ -95,6 +94,7 @@ export default function TradingPlatform() {
                   positions={positions}
                   setPositions={setPositions}
                 />
+                <TradingChart apiKeys={apiKeys} />
               </div>
             )}
             {activeTab === "settings" && (

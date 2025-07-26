@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { AlertTriangle, TrendingUp, TrendingDown } from "lucide-react"
+import { CryptoIndexChart } from "@/components/crypto-index-chart"
+import BitcoinChartsGrid from "@/components/bitcoin-charts-grid"
 
 interface TradingChartProps {
   apiKeys: { openai?: string }
@@ -142,85 +144,89 @@ export function TradingChart({ apiKeys }: TradingChartProps) {
 
 
   return (
-    <Card className="h-full p-4">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-semibold">BTC/USDT - 1m</h2>
-        <div className="flex items-center space-x-2">
-          <Badge variant="outline" className="text-green-500">
-            ${currentPrice > 0 ? currentPrice.toFixed(2) : "--"}
-          </Badge>
-
+    <div className="space-y-6">
+      <Card className="p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold">BTC/USDT - 1m</h2>
+          <div className="flex items-center space-x-2">
+            <Badge variant="outline" className="text-green-500">
+              ${currentPrice > 0 ? currentPrice.toFixed(2) : "--"}
+            </Badge>
+          </div>
         </div>
-      </div>
 
-      {apiError && (
-        <div className="mb-4 p-2 bg-red-50 text-red-600 rounded-md flex items-center text-sm">
-          <AlertTriangle className="h-4 w-4 mr-2" />
-          <span>{apiError}</span>
-        </div>
-      )}
+        {apiError && (
+          <div className="mb-4 p-2 bg-red-50 text-red-600 rounded-md flex items-center text-sm">
+            <AlertTriangle className="h-4 w-4 mr-2" />
+            <span>{apiError}</span>
+          </div>
+        )}
 
-      <div 
-        ref={tradingViewRef}
-        className="w-full border rounded bg-[#1e1e2e]"
-        style={{ 
-          height: "400px",
-          backgroundColor: "#1e1e2e",
-          border: "1px solid #363c4e"
-        }}
-      >
-        <div className="flex items-center justify-center h-full text-gray-300">
-          Cargando gráfico de TradingView...
+        <div 
+          ref={tradingViewRef}
+          className="w-full border rounded bg-[#1e1e2e]"
+          style={{ 
+            height: "400px",
+            backgroundColor: "#1e1e2e",
+            border: "1px solid #363c4e"
+          }}
+        >
+          <div className="flex items-center justify-center h-full text-gray-300">
+            Cargando gráfico de TradingView...
+          </div>
         </div>
-      </div>
 
-      {/* Métricas básicas */}
-      <div className="mt-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="p-4">
-              <div className="text-sm text-muted-foreground">Cambio 24h</div>
-              <div className={`text-lg font-semibold flex items-center ${
-                priceChange24h >= 0 ? "text-green-500" : "text-red-500"
-              }`}>
-                {priceChange24h >= 0 ? (
-                  <TrendingUp className="h-4 w-4 mr-1" />
-                ) : (
-                  <TrendingDown className="h-4 w-4 mr-1" />
-                )}
-                {priceChange24h.toFixed(2)}%
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="p-4">
-              <div className="text-sm text-muted-foreground">Máximo 24h</div>
-              <div className="text-lg font-semibold">
-                ${high24h.toFixed(2)}
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="p-4">
-              <div className="text-sm text-muted-foreground">Mínimo 24h</div>
-              <div className="text-lg font-semibold">
-                ${low24h.toFixed(2)}
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="p-4">
-              <div className="text-sm text-muted-foreground">Volumen 24h</div>
-              <div className="text-lg font-semibold">
-                {volume24h.toLocaleString(undefined, { maximumFractionDigits: 0 })} BTC
-              </div>
-            </CardContent>
-          </Card>
+        {/* Métricas básicas */}
+        <div className="mt-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Card>
+              <CardContent className="p-4">
+                <div className="text-sm text-muted-foreground">Cambio 24h</div>
+                <div className={`text-lg font-semibold flex items-center ${
+                  priceChange24h >= 0 ? "text-green-500" : "text-red-500"
+                }`}>
+                  {priceChange24h >= 0 ? (
+                    <TrendingUp className="h-4 w-4 mr-1" />
+                  ) : (
+                    <TrendingDown className="h-4 w-4 mr-1" />
+                  )}
+                  {priceChange24h.toFixed(2)}%
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardContent className="p-4">
+                <div className="text-sm text-muted-foreground">Máximo 24h</div>
+                <div className="text-lg font-semibold">
+                  ${high24h.toFixed(2)}
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardContent className="p-4">
+                <div className="text-sm text-muted-foreground">Mínimo 24h</div>
+                <div className="text-lg font-semibold">
+                  ${low24h.toFixed(2)}
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardContent className="p-4">
+                <div className="text-sm text-muted-foreground">Volumen 24h</div>
+                <div className="text-lg font-semibold">
+                  {volume24h.toLocaleString(undefined, { maximumFractionDigits: 0 })} BTC
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
-      </div>
-    </Card>
+      </Card>
+
+      {/* Bitcoin Charts Grid */}
+      <BitcoinChartsGrid />
+    </div>
   )
 }
