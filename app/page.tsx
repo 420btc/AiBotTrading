@@ -1,21 +1,51 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { TradingChart } from "@/components/trading-chart"
 import { TradingPanel } from "@/components/trading-panel"
 import { IndicatorsPanel } from "@/components/indicators-panel"
 import { PositionsPanel } from "@/components/positions-panel"
 import { SettingsPanel } from "@/components/settings-panel"
+import { AIBingXPanel } from "@/components/ai-bingx-panel"
 import { Button } from "@/components/ui/button"
-import { Moon, Sun, Settings, TrendingUp, BarChart3 } from "lucide-react"
+import { Moon, Sun, Settings, TrendingUp, BarChart3, Bot } from "lucide-react"
 import { useTheme } from "next-themes"
 
 export default function TradingPlatform() {
   const [activeTab, setActiveTab] = useState<string>("chart")
   const [balance, setBalance] = useState<number>(500)
   const [positions, setPositions] = useState<any[]>([])
-  const [apiKeys, setApiKeys] = useState<{ openai: string }>({ openai: "" })
+  const [apiKeys, setApiKeys] = useState<{ openai: string; bingxApiKey: string; bingxSecretKey: string }>({
+    openai: "",
+    bingxApiKey: "",
+    bingxSecretKey: ""
+  })
   const { theme, setTheme } = useTheme()
+
+  // Cargar API keys desde localStorage al inicializar
+  useEffect(() => {
+    const savedApiKeys = localStorage.getItem('trading-platform-api-keys')
+    if (savedApiKeys) {
+      try {
+        const parsedKeys = JSON.parse(savedApiKeys)
+        setApiKeys(parsedKeys)
+      } catch (error) {
+        console.error('Error cargando API keys desde localStorage:', error)
+      }
+    }
+  }, [])
+
+  // Función para guardar API keys en localStorage
+  const saveApiKeysToStorage = (keys: { openai: string; bingxApiKey: string; bingxSecretKey: string }) => {
+    setApiKeys(keys)
+    localStorage.setItem('trading-platform-api-keys', JSON.stringify(keys))
+  }
+
+  // Función para limpiar API keys del localStorage
+  const clearApiKeysFromStorage = () => {
+    setApiKeys({ openai: "", bingxApiKey: "", bingxSecretKey: "" })
+    localStorage.removeItem('trading-platform-api-keys')
+  }
 
   const tabs = [
     { id: "chart", label: "Gráfico", icon: TrendingUp },
@@ -79,12 +109,29 @@ export default function TradingPlatform() {
                     />
                   </div>
                 </div>
+                <div className="border-t">
+                  <AIBingXPanel 
+                    apiKeys={apiKeys}
+                    balance={balance}
+                    setBalance={setBalance}
+                    positions={positions}
+                    setPositions={setPositions}
+                  />
+                </div>
               </div>
             )}
 
             {activeTab === "indicators" && <IndicatorsPanel />}
 
-            {activeTab === "settings" && <SettingsPanel apiKeys={apiKeys} setApiKeys={setApiKeys} />}
+
+
+            {activeTab === "settings" && (
+              <SettingsPanel 
+                apiKeys={apiKeys} 
+                setApiKeys={saveApiKeysToStorage}
+                clearApiKeys={clearApiKeysFromStorage}
+              />
+            )}
           </div>
         </div>
 

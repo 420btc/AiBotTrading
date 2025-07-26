@@ -8,7 +8,6 @@ import { Bot, TrendingDown, TrendingUp, AlertTriangle } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
-// Añadir las props necesarias para la IA
 interface TradingChartProps {
   apiKeys: { openai: string }
   balance: number
@@ -17,51 +16,9 @@ interface TradingChartProps {
   setPositions: React.Dispatch<React.SetStateAction<any[]>>
 }
 
-interface Candle {
-  timestamp: number
-  open: number
-  high: number
-  low: number
-  close: number
-  volume: number
-}
-
-interface Indicators {
-  ema10: number[]
-  ema55: number[]
-  ema200: number[]
-  ema365: number[]
-  macd: { macd: number[]; signal: number[]; histogram: number[] }
-  rsi: number[]
-}
-
 export function TradingChart({ apiKeys, balance, setBalance, positions, setPositions }: TradingChartProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [candles, setCandles] = useState<Candle[]>([])
+  const tradingViewRef = useRef<HTMLDivElement>(null)
   const [currentPrice, setCurrentPrice] = useState(0)
-  const [indicators, setIndicators] = useState<Indicators>({
-    ema10: [],
-    ema55: [],
-    ema200: [],
-    ema365: [],
-    macd: { macd: [], signal: [], histogram: [] },
-    rsi: [],
-  })
-  const [showIndicators, setShowIndicators] = useState({
-    ema10: true,
-    ema55: true,
-    ema200: true,
-    ema365: false,
-    macd: false,
-    rsi: false,
-    volume: true,
-  })
-
-  // Estados para navegación del gráfico
-  const [chartOffset, setChartOffset] = useState(0)
-  const [isDragging, setIsDragging] = useState(false)
-  const [lastMouseX, setLastMouseX] = useState(0)
-  const [visibleCandleCount, setVisibleCandleCount] = useState(100)
 
   // Estados de IA
   const [isAIActive, setIsAIActive] = useState(false)
@@ -72,12 +29,12 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
   const [apiError, setApiError] = useState<string | null>(null)
   const [lastAIPositionTime, setLastAIPositionTime] = useState<number>(0)
 
-  // Conectar a Binance WebSocket para datos en tiempo real
+  // Conectar a Binance WebSocket para obtener precio actual
   useEffect(() => {
     let ws: WebSocket | null = null
 
     try {
-      ws = new WebSocket("wss://stream.binance.com:9443/ws/btcusdt@kline_1m")
+      ws = new WebSocket("wss://stream.binance.com:9443/ws/btcusdt@ticker")
 
       ws.onopen = () => {
         console.log("WebSocket conectado")
@@ -87,38 +44,12 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data)
-          if (!data || !data.k) {
+          if (!data || !data.c) {
             console.warn("Datos de WebSocket inválidos:", data)
             return
           }
 
-          const kline = data.k
-
-          if (kline.x) {
-            // Vela cerrada
-            const newCandle: Candle = {
-              timestamp: kline.t,
-              open: Number.parseFloat(kline.o) || 0,
-              high: Number.parseFloat(kline.h) || 0,
-              low: Number.parseFloat(kline.l) || 0,
-              close: Number.parseFloat(kline.c) || 0,
-              volume: Number.parseFloat(kline.v) || 0,
-            }
-
-            // Validar datos de la vela
-            if (isNaN(newCandle.open) || isNaN(newCandle.high) || isNaN(newCandle.low) || isNaN(newCandle.close)) {
-              console.warn("Datos de vela inválidos:", newCandle)
-              return
-            }
-
-            setCandles((prev) => {
-              const updated = [...prev.slice(-499), newCandle]
-              calculateIndicators(updated)
-              return updated
-            })
-          }
-
-          const closePrice = Number.parseFloat(kline.c)
+          const closePrice = Number.parseFloat(data.c)
           if (!isNaN(closePrice) && isFinite(closePrice)) {
             setCurrentPrice(closePrice)
           }
@@ -140,9 +71,6 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
       setApiError("Error inicializando conexión con Binance")
     }
 
-    // Obtener datos históricos
-    fetchHistoricalData()
-
     return () => {
       if (ws) {
         ws.close()
@@ -150,287 +78,201 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
     }
   }, [])
 
-  const fetchHistoricalData = async () => {
-    try {
-      const response = await fetch("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=500")
+  // Cargar widget de TradingView
+  useEffect(() => {
+    if (!tradingViewRef.current) return
 
-      if (!response.ok) {
-        throw new Error(`Error HTTP: ${response.status}`)
+    // Limpiar el contenedor
+    tradingViewRef.current.innerHTML = ''
+
+    // Crear el script de TradingView
+    const script = document.createElement('script')
+    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js'
+    script.type = 'text/javascript'
+    script.async = true
+    script.innerHTML = JSON.stringify({
+      "autosize": true,
+      "symbol": "BINANCE:BTCUSDT",
+      "interval": "15",
+      "timezone": "Etc/UTC",
+      "theme": "dark",
+      "style": "1",
+      "locale": "es",
+      "enable_publishing": false,
+      "allow_symbol_change": true,
+      "calendar": false,
+      "support_host": "https://www.tradingview.com",
+      "studies": [
+        "MACD@tv-basicstudies",
+        "RSI@tv-basicstudies",
+        {
+          "id": "MAExp@tv-basicstudies",
+          "inputs": {"length": 10}
+        },
+        {
+          "id": "MAExp@tv-basicstudies",
+          "inputs": {"length": 55}
+        },
+        {
+          "id": "MAExp@tv-basicstudies",
+          "inputs": {"length": 200}
+        },
+        {
+          "id": "MAExp@tv-basicstudies",
+          "inputs": {"length": 365}
+        }
+      ],
+      "studies_overrides": {
+        "MACD.macd": "#2196F3",
+        "MACD.signal": "#FF9800",
+        "MACD.histogram": "#4CAF50",
+        "RSI.RSI": "#9C27B0",
+        "MAExp.Plot": "#FF5722",
+        "MAExp.Plot.1": "#00BCD4",
+        "MAExp.Plot.2": "#FFC107",
+        "MAExp.Plot.3": "#E91E63"
+      },
+      "overrides": {
+        "paneProperties.background": "#131722",
+        "paneProperties.vertGridProperties.color": "#363c4e",
+        "paneProperties.horzGridProperties.color": "#363c4e",
+        "symbolWatermarkProperties.transparency": 90,
+        "scalesProperties.textColor": "#AAA",
+        "mainSeriesProperties.candleStyle.upColor": "#26a69a",
+        "mainSeriesProperties.candleStyle.downColor": "#ef5350",
+        "mainSeriesProperties.candleStyle.borderUpColor": "#26a69a",
+        "mainSeriesProperties.candleStyle.borderDownColor": "#ef5350",
+        "mainSeriesProperties.candleStyle.wickUpColor": "#26a69a",
+        "mainSeriesProperties.candleStyle.wickDownColor": "#ef5350"
       }
+    })
 
-      const data = await response.json()
+    tradingViewRef.current.appendChild(script)
+  }, [])
 
-      if (!Array.isArray(data)) {
-        throw new Error("Formato de respuesta inválido")
-      }
 
-      const historicalCandles: Candle[] = data
-        .map((kline: any[]) => {
-          // Validar y convertir cada valor con valor predeterminado en caso de error
-          const open = Number.parseFloat(kline[1]) || 0
-          const high = Number.parseFloat(kline[2]) || 0
-          const low = Number.parseFloat(kline[3]) || 0
-          const close = Number.parseFloat(kline[4]) || 0
-          const volume = Number.parseFloat(kline[5]) || 0
-
-          return {
-            timestamp: kline[0] || Date.now(),
-            open,
-            high,
-            low,
-            close,
-            volume,
-          }
-        })
-        .filter(
-          (candle) =>
-            // Filtrar velas con datos inválidos
-            !isNaN(candle.open) && !isNaN(candle.high) && !isNaN(candle.low) && !isNaN(candle.close),
-        )
-
-      if (historicalCandles.length > 0) {
-        setCandles(historicalCandles)
-        calculateIndicators(historicalCandles)
-        setApiError(null)
-      } else {
-        throw new Error("No se obtuvieron datos válidos")
-      }
-    } catch (error) {
-      console.error("Error fetching historical data:", error)
-      setApiError(`Error obteniendo datos históricos: ${error instanceof Error ? error.message : "Error desconocido"}`)
-    }
-  }
-
-  // Modificar la función calculateEMA para evitar NaN
-  const calculateEMA = (prices: number[], period: number): number[] => {
-    if (!prices || prices.length === 0) return []
-
-    const validPrices = prices.filter((price) => !isNaN(price) && isFinite(price))
-    if (validPrices.length === 0) return []
-
-    const ema = []
-    const multiplier = 2 / (period + 1)
-
-    ema[0] = validPrices[0]
-    for (let i = 1; i < validPrices.length; i++) {
-      const currentEMA: number = validPrices[i] * multiplier + ema[i - 1] * (1 - multiplier)
-      ema[i] = isNaN(currentEMA) ? ema[i - 1] : currentEMA
-    }
-
-    return ema
-  }
-
-  // Modificar calculateRSI para evitar NaN
-  const calculateRSI = (prices: number[], period = 14): number[] => {
-    if (!prices || prices.length < period + 1) return []
-
-    const validPrices = prices.filter((price) => !isNaN(price) && isFinite(price))
-    if (validPrices.length < period + 1) return []
-
-    const rsi = []
-    const gains = []
-    const losses = []
-
-    for (let i = 1; i < validPrices.length; i++) {
-      const change = validPrices[i] - validPrices[i - 1]
-      gains.push(change > 0 ? change : 0)
-      losses.push(change < 0 ? Math.abs(change) : 0)
-    }
-
-    for (let i = period - 1; i < gains.length; i++) {
-      const avgGain = gains.slice(i - period + 1, i + 1).reduce((a, b) => a + b) / period
-      const avgLoss = losses.slice(i - period + 1, i + 1).reduce((a, b) => a + b) / period
-
-      if (avgLoss === 0 || isNaN(avgLoss)) {
-        rsi.push(100)
-      } else {
-        const rs = avgGain / avgLoss
-        const rsiValue = 100 - 100 / (1 + rs)
-        rsi.push(isNaN(rsiValue) ? 50 : rsiValue)
-      }
-    }
-
-    return rsi
-  }
-
-  const calculateMACD = (prices: number[]): { macd: number[]; signal: number[]; histogram: number[] } => {
-    const ema12 = calculateEMA(prices, 12)
-    const ema26 = calculateEMA(prices, 26)
-    const macd = ema12.map((val, i) => val - ema26[i])
-    const signal = calculateEMA(macd, 9)
-    const histogram = macd.map((val, i) => val - signal[i])
-
-    return { macd, signal, histogram }
-  }
-
-  const calculateIndicators = (candleData: Candle[]) => {
-    if (!candleData || candleData.length === 0) return
-
-    try {
-      const closePrices = candleData.map((c) => c.close).filter((price) => !isNaN(price) && isFinite(price))
-
-      if (closePrices.length === 0) {
-        console.warn("No hay precios válidos para calcular indicadores")
-        return
-      }
-
-      const newIndicators: Indicators = {
-        ema10: calculateEMA(closePrices, 10),
-        ema55: calculateEMA(closePrices, 55),
-        ema200: calculateEMA(closePrices, 200),
-        ema365: calculateEMA(closePrices, 365),
-        macd: calculateMACD(closePrices),
-        rsi: calculateRSI(closePrices),
-      }
-
-      setIndicators(newIndicators)
-    } catch (error) {
-      console.error("Error calculando indicadores:", error)
-    }
-  }
 
   const analyzeMarket = async () => {
     if (!apiKeys.openai) {
-      alert("Por favor configura tu API key de OpenAI primero")
+      setApiError("API key de OpenAI no configurada")
       return
     }
 
-    setAiStatus("Analizando...")
+    if (!currentPrice || currentPrice <= 0) {
+      setApiError("No hay datos de precio disponibles")
+      return
+    }
+
+    // Verificar tiempo mínimo entre análisis (5 minutos)
+    const now = Date.now()
+    if (now - lastAIPositionTime < 300000) {
+      const remainingTime = Math.ceil((300000 - (now - lastAIPositionTime)) / 1000)
+      setAiStatus(`⏳ Esperando ${remainingTime}s...`)
+      return
+    }
+
+    setAiStatus("🤖 Analizando mercado...")
 
     try {
-      // Obtener datos completos del mercado
-      const [priceResponse, klineResponse] = await Promise.all([
+      // Obtener datos de mercado de Binance para múltiples timeframes
+      const [tickerResponse, klines15m, klines1h, klines4h, klines1d] = await Promise.all([
         fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT"),
-        fetch("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=100"),
+        fetch("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=15m&limit=100"),
+        fetch("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=100"),
+        fetch("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=4h&limit=100"),
+        fetch("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=100")
       ])
 
-      if (!priceResponse.ok || !klineResponse.ok) {
-        throw new Error("Error obteniendo datos de mercado")
+      const tickerData = await tickerResponse.json()
+      const klines15mData = await klines15m.json()
+      const klines1hData = await klines1h.json()
+      const klines4hData = await klines4h.json()
+      const klines1dData = await klines1d.json()
+
+      // Función para calcular RSI
+      const calculateRSI = (prices: number[], period = 14) => {
+        if (prices.length < period + 1) return 50
+        
+        let gains = 0, losses = 0
+        for (let i = 1; i <= period; i++) {
+          const change = prices[prices.length - i] - prices[prices.length - i - 1]
+          if (change > 0) gains += change
+          else losses -= change
+        }
+        
+        const avgGain = gains / period
+        const avgLoss = losses / period
+        const rs = avgGain / avgLoss
+        return 100 - (100 / (1 + rs))
       }
 
-      const priceData = await priceResponse.json()
-      const klineData = await klineResponse.json()
-
-      // Validar datos recibidos
-      if (!priceData || !klineData || !Array.isArray(klineData)) {
-        throw new Error("Formato de datos inválido")
+      // Función para calcular EMA
+      const calculateEMA = (prices: number[], period: number) => {
+        if (prices.length < period) return prices[prices.length - 1]
+        
+        const multiplier = 2 / (period + 1)
+        let ema = prices.slice(0, period).reduce((a, b) => a + b) / period
+        
+        for (let i = period; i < prices.length; i++) {
+          ema = (prices[i] * multiplier) + (ema * (1 - multiplier))
+        }
+        return ema
       }
 
-      const price = Number.parseFloat(priceData.lastPrice) || currentPrice
-      const priceChange = Number.parseFloat(priceData.priceChangePercent) || 0
-      const volume24h = Number.parseFloat(priceData.volume) || 0
-      const high24h = Number.parseFloat(priceData.highPrice) || price
-      const low24h = Number.parseFloat(priceData.lowPrice) || price
-
-      // Calcular datos adicionales de las últimas velas con validación
-      const recentCandles = klineData
-        .slice(-20)
-        .map((k: any) => {
-          try {
-            return {
-              open: Number.parseFloat(k[1]) || 0,
-              high: Number.parseFloat(k[2]) || 0,
-              low: Number.parseFloat(k[3]) || 0,
-              close: Number.parseFloat(k[4]) || 0,
-              volume: Number.parseFloat(k[5]) || 0,
-            }
-          } catch (e) {
-            return {
-              open: 0,
-              high: 0,
-              low: 0,
-              close: 0,
-              volume: 0,
-            }
-          }
-        })
-        .filter((c) => c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0)
-
-      // Obtener indicadores actuales con validaciones
-      const currentIndicators = {
-        rsi: indicators.rsi.length > 0 ? indicators.rsi[indicators.rsi.length - 1] || 50 : 50,
-        macd: {
-          value: indicators.macd.macd.length > 0 ? indicators.macd.macd[indicators.macd.macd.length - 1] || 0 : 0,
-          signal:
-            indicators.macd.signal.length > 0 ? indicators.macd.signal[indicators.macd.signal.length - 1] || 0 : 0,
-          histogram:
-            indicators.macd.histogram.length > 0
-              ? indicators.macd.histogram[indicators.macd.histogram.length - 1] || 0
-              : 0,
-        },
-        ema10: indicators.ema10.length > 0 ? indicators.ema10[indicators.ema10.length - 1] || price : price,
-        ema55: indicators.ema55.length > 0 ? indicators.ema55[indicators.ema55.length - 1] || price : price,
-        ema200: indicators.ema200.length > 0 ? indicators.ema200[indicators.ema200.length - 1] || price : price,
-        ema365: indicators.ema365.length > 0 ? indicators.ema365[indicators.ema365.length - 1] || price : price,
+      // Procesar datos de cada timeframe
+      const processTimeframeData = (klines: any[], timeframe: string) => {
+        const closes = klines.map(k => parseFloat(k[4]))
+        const volumes = klines.map(k => parseFloat(k[5]))
+        const highs = klines.map(k => parseFloat(k[2]))
+        const lows = klines.map(k => parseFloat(k[3]))
+        
+        return {
+          timeframe,
+          rsi: calculateRSI(closes),
+          ema20: calculateEMA(closes, 20),
+          ema50: calculateEMA(closes, 50),
+          ema200: calculateEMA(closes, 200),
+          currentPrice: closes[closes.length - 1],
+          volume: volumes[volumes.length - 1],
+          avgVolume: volumes.slice(-20).reduce((a, b) => a + b) / 20,
+          priceChange: ((closes[closes.length - 1] - closes[closes.length - 2]) / closes[closes.length - 2]) * 100,
+          high: highs[highs.length - 1],
+          low: lows[lows.length - 1]
+        }
       }
 
-      // Calcular tendencias y patrones
-      const priceAboveEMA10 = price > currentIndicators.ema10
-      const priceAboveEMA55 = price > currentIndicators.ema55
-      const priceAboveEMA200 = price > currentIndicators.ema200
-      const emaAlignment =
-        currentIndicators.ema10 > currentIndicators.ema55 && currentIndicators.ema55 > currentIndicators.ema200
-      const macdBullish = currentIndicators.macd.value > currentIndicators.macd.signal
+      const timeframeData = {
+        '15m': processTimeframeData(klines15mData, '15m'),
+        '1h': processTimeframeData(klines1hData, '1h'),
+        '4h': processTimeframeData(klines4hData, '4h'),
+        '1d': processTimeframeData(klines1dData, '1d')
+      }
 
-      // Calcular volumen promedio con validación
-      const validVolumes = recentCandles.map((c) => c.volume).filter((v) => !isNaN(v) && v > 0)
-      const volumeAvg =
-        validVolumes.length > 0 ? validVolumes.reduce((sum, v) => sum + v, 0) / validVolumes.length : 1000000
-
-      // Datos completos para la IA
-      const comprehensiveMarketData = {
-        // Precio actual y datos básicos
-        currentPrice: price,
-        priceChange24h: priceChange,
-        high24h: high24h,
-        low24h: low24h,
-        volume24h: volume24h,
-
-        // Indicadores técnicos
-        indicators: currentIndicators,
-
-        // Análisis de tendencias
-        trends: {
-          priceAboveEMA10,
-          priceAboveEMA55,
-          priceAboveEMA200,
-          emaAlignment,
-          macdBullish,
-          rsiBullish: currentIndicators.rsi < 70 && currentIndicators.rsi > 30,
-          rsiOverbought: currentIndicators.rsi > 70,
-          rsiOversold: currentIndicators.rsi < 30,
-        },
-
-        // Datos de velas recientes
-        recentCandles: recentCandles.slice(-5),
-        volumeAnalysis: {
-          currentVolume: recentCandles.length > 0 ? recentCandles[recentCandles.length - 1]?.volume || 0 : 0,
-          averageVolume: volumeAvg,
-          volumeRatio:
-            recentCandles.length > 0 ? (recentCandles[recentCandles.length - 1]?.volume || 0) / volumeAvg : 1,
-        },
-
-        // Estado de la cuenta
+      const marketData = {
+        currentPrice: currentPrice,
+        priceChange24h: Number.parseFloat(tickerData.priceChangePercent) || 0,
+        high24h: Number.parseFloat(tickerData.highPrice) || currentPrice,
+        low24h: Number.parseFloat(tickerData.lowPrice) || currentPrice,
+        volume24h: Number.parseFloat(tickerData.volume) || 0,
+        timeframes: timeframeData,
         account: {
           balance: balance,
           activePositions: positions.length,
           maxPositionSize: Number.parseFloat(maxPositionSize) || 100,
           riskLevel: balance > 400 ? "conservative" : balance > 200 ? "moderate" : "aggressive",
         },
-
-        // Contexto temporal
         timestamp: new Date().toISOString(),
         marketSession: new Date().getHours() >= 9 && new Date().getHours() <= 16 ? "active" : "quiet",
       }
 
-      console.log("Enviando datos completos a IA:", comprehensiveMarketData)
+      console.log("Enviando datos multi-timeframe a IA:", marketData)
 
-      const aiAnalysis = await callOpenAI(comprehensiveMarketData)
+      const aiAnalysis = await callOpenAI(marketData)
       setCurrentAnalysis(aiAnalysis.reasoning)
       setApiError(null)
 
       // SIEMPRE ejecutar la decisión de IA (crear posición)
-      const executionResult = await executeAIDecision(aiAnalysis, price)
+      const executionResult = await executeAIDecision(aiAnalysis, currentPrice)
 
       const newDecision = {
         action: aiAnalysis.action,
@@ -441,11 +283,15 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
         timestamp: Date.now(),
         executed: executionResult.success,
         positionId: executionResult.positionId,
+        timeframeAnalysis: aiAnalysis.timeframeAnalysis || {},
+        riskManagement: aiAnalysis.riskManagement || {},
+        marketContext: aiAnalysis.marketContext || {},
         marketData: {
-          price: price,
-          rsi: currentIndicators.rsi,
-          macd: currentIndicators.macd.value,
-          trend: emaAlignment ? "bullish" : "bearish",
+          price: currentPrice,
+          trend: tickerData.priceChangePercent > 0 ? "bullish" : "bearish",
+          rsi: timeframeData['1h'].rsi,
+          optimalTimeframe: aiAnalysis.riskManagement?.optimalTimeframe || '1h',
+          confluenceScore: aiAnalysis.marketContext?.confluenceScore || 5
         },
       }
 
@@ -464,42 +310,66 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
   }
 
   const callOpenAI = async (marketData: any) => {
-    const prompt = `
-  Eres un bot de trading profesional de Bitcoin. Analiza estos datos COMPLETOS del mercado y toma una decisión DEFINITIVA:
+    // Obtener datos de posiciones actuales para análisis de liquidación
+    const currentPositions = positions.map(pos => ({
+      type: pos.type,
+      amount: pos.amount,
+      entryPrice: pos.entryPrice,
+      leverage: pos.leverage,
+      liquidationPrice: pos.type === 'long' 
+        ? pos.entryPrice * (1 - 1/pos.leverage) 
+        : pos.entryPrice * (1 + 1/pos.leverage),
+      currentPnL: pos.type === 'long' 
+        ? ((currentPrice - pos.entryPrice) / pos.entryPrice) * 100 * pos.leverage
+        : ((pos.entryPrice - currentPrice) / pos.entryPrice) * 100 * pos.leverage
+    }));
 
-  === DATOS DE PRECIO ===
+    const prompt = `
+  Eres un experto trader de Bitcoin con análisis técnico avanzado. Analiza TODOS los timeframes y proporciona un análisis completo:
+
+  === DATOS DE MERCADO ACTUALES ===
   Precio actual: $${marketData.currentPrice}
   Cambio 24h: ${marketData.priceChange24h}%
   Máximo 24h: $${marketData.high24h}
   Mínimo 24h: $${marketData.low24h}
   Volumen 24h: ${marketData.volume24h} BTC
 
-  === INDICADORES TÉCNICOS ===
-  RSI (14): ${marketData.indicators.rsi}
-  MACD: ${marketData.indicators.macd.value} (Señal: ${marketData.indicators.macd.signal}, Histograma: ${marketData.indicators.macd.histogram})
-  EMA10: $${marketData.indicators.ema10}
-  EMA55: $${marketData.indicators.ema55}
-  EMA200: $${marketData.indicators.ema200}
-  EMA365: $${marketData.indicators.ema365}
+  === ANÁLISIS MULTI-TIMEFRAME ===
+  📊 TIMEFRAME 15m:
+  - RSI: ${marketData.timeframes['15m'].rsi.toFixed(2)}
+  - EMA20: $${marketData.timeframes['15m'].ema20.toFixed(2)}
+  - EMA50: $${marketData.timeframes['15m'].ema50.toFixed(2)}
+  - Cambio: ${marketData.timeframes['15m'].priceChange.toFixed(2)}%
+  - Volumen: ${marketData.timeframes['15m'].volume.toFixed(0)} vs Promedio: ${marketData.timeframes['15m'].avgVolume.toFixed(0)}
 
-  === ANÁLISIS DE TENDENCIAS ===
-  Precio > EMA10: ${marketData.trends.priceAboveEMA10}
-  Precio > EMA55: ${marketData.trends.priceAboveEMA55}
-  Precio > EMA200: ${marketData.trends.priceAboveEMA200}
-  Alineación EMAs (alcista): ${marketData.trends.emaAlignment}
-  MACD alcista: ${marketData.trends.macdBullish}
-  RSI sobrecompra: ${marketData.trends.rsiOverbought}
-  RSI sobreventa: ${marketData.trends.rsiOversold}
+  📊 TIMEFRAME 1h:
+  - RSI: ${marketData.timeframes['1h'].rsi.toFixed(2)}
+  - EMA20: $${marketData.timeframes['1h'].ema20.toFixed(2)}
+  - EMA50: $${marketData.timeframes['1h'].ema50.toFixed(2)}
+  - EMA200: $${marketData.timeframes['1h'].ema200.toFixed(2)}
+  - Cambio: ${marketData.timeframes['1h'].priceChange.toFixed(2)}%
+  - Volumen: ${marketData.timeframes['1h'].volume.toFixed(0)} vs Promedio: ${marketData.timeframes['1h'].avgVolume.toFixed(0)}
 
-  === ANÁLISIS DE VOLUMEN ===
-  Volumen actual: ${marketData.volumeAnalysis.currentVolume}
-  Volumen promedio: ${marketData.volumeAnalysis.averageVolume.toFixed(0)}
-  Ratio volumen: ${marketData.volumeAnalysis.volumeRatio.toFixed(2)}x
+  📊 TIMEFRAME 4h:
+  - RSI: ${marketData.timeframes['4h'].rsi.toFixed(2)}
+  - EMA20: $${marketData.timeframes['4h'].ema20.toFixed(2)}
+  - EMA50: $${marketData.timeframes['4h'].ema50.toFixed(2)}
+  - EMA200: $${marketData.timeframes['4h'].ema200.toFixed(2)}
+  - Cambio: ${marketData.timeframes['4h'].priceChange.toFixed(2)}%
+  - Volumen: ${marketData.timeframes['4h'].volume.toFixed(0)} vs Promedio: ${marketData.timeframes['4h'].avgVolume.toFixed(0)}
 
-  === VELAS RECIENTES ===
-  ${marketData.recentCandles
-    .map((c: any, i: number) => `Vela ${i + 1}: Open $${c.open} High $${c.high} Low $${c.low} Close $${c.close}`)
-    .join("\n")}
+  📊 TIMEFRAME 1d:
+  - RSI: ${marketData.timeframes['1d'].rsi.toFixed(2)}
+  - EMA20: $${marketData.timeframes['1d'].ema20.toFixed(2)}
+  - EMA50: $${marketData.timeframes['1d'].ema50.toFixed(2)}
+  - EMA200: $${marketData.timeframes['1d'].ema200.toFixed(2)}
+  - Cambio: ${marketData.timeframes['1d'].priceChange.toFixed(2)}%
+  - Volumen: ${marketData.timeframes['1d'].volume.toFixed(0)} vs Promedio: ${marketData.timeframes['1d'].avgVolume.toFixed(0)}
+
+  === POSICIONES ACTUALES ===
+  ${currentPositions.length > 0 ? currentPositions.map(pos => 
+    `${pos.type.toUpperCase()}: $${pos.amount} @ $${pos.entryPrice} (${pos.leverage}x) - Liquidación: $${pos.liquidationPrice.toFixed(2)} - PnL: ${pos.currentPnL.toFixed(2)}%`
+  ).join('\n  ') : 'Sin posiciones abiertas'}
 
   === ESTADO DE CUENTA ===
   Balance: $${marketData.account.balance}
@@ -507,33 +377,64 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
   Tamaño máximo: $${marketData.account.maxPositionSize}
   Nivel de riesgo: ${marketData.account.riskLevel}
 
-  === CONTEXTO ===
+  === CONTEXTO TEMPORAL ===
   Sesión de mercado: ${marketData.marketSession}
   Timestamp: ${marketData.timestamp}
 
-  INSTRUCCIONES OBLIGATORIAS:
+  INSTRUCCIONES CRÍTICAS:
   1. NUNCA respondas "hold" - SIEMPRE elige "buy" o "sell"
-  2. Usa TODOS los datos proporcionados para tu análisis
-  3. Confianza mínima: 65%
-  4. Considera el contexto completo del mercado
-  5. Justifica tu decisión con datos específicos
-  6. Esta decisión CREARÁ una posición automáticamente
+  2. Analiza TODOS los timeframes (15m, 1h, 4h, 1d) proporcionados
+  3. Evalúa riesgo de liquidación de posiciones existentes basado en apalancamiento
+  4. Considera confluencia de indicadores entre timeframes (RSI, EMAs, volumen)
+  5. Recomienda timeframe óptimo para la operación
+  6. Evalúa si el volumen actual vs promedio confirma la señal
+  7. Esta decisión CREARÁ una posición automáticamente
 
-  ESTRATEGIA DE DECISIÓN:
-  - RSI > 70 + tendencia bajista = SELL
-  - RSI < 30 + tendencia alcista = BUY  
-  - Alineación EMAs + MACD positivo = BUY
-  - Ruptura de EMAs + MACD negativo = SELL
-  - Alto volumen + momentum = seguir tendencia
-  - Bajo volumen = contrarian
-
-  Responde SOLO en formato JSON:
+  Responde SOLO en formato JSON con la estructura EXACTA del nuevo sistema:
   {
     "action": "buy",
     "confidence": 75,
     "amount": 80,
     "leverage": 3,
-    "reasoning": "Análisis detallado basado en los datos proporcionados..."
+    "reasoning": "Análisis detallado...",
+    "timeframeAnalysis": {
+      "15m": {
+        "trend": "bullish",
+        "rsi": 65,
+        "ema20": 49800,
+        "volume": "high",
+        "signal": "strong_buy"
+      },
+      "1h": {
+        "trend": "bullish",
+        "rsi": 58,
+        "macd": "bullish_cross",
+        "ema50": 49500,
+        "signal": "buy"
+      },
+      "4h": {
+        "trend": "neutral",
+        "rsi": 52,
+        "ema200": 48000,
+        "signal": "neutral"
+      },
+      "1d": {
+        "trend": "bullish",
+        "rsi": 60,
+        "signal": "buy"
+      }
+    },
+    "riskManagement": {
+      "liquidationRisk": "low",
+      "optimalTimeframe": "1h",
+      "stopLoss": 48500,
+      "takeProfit": 51000
+    },
+    "marketContext": {
+      "confluenceScore": 8,
+      "volumeProfile": "increasing",
+      "marketStructure": "uptrend"
+    }
   }
   `
 
@@ -591,23 +492,17 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
       return aiDecision
     } catch (error) {
       console.error("Error llamando a OpenAI:", error)
-      // Fallback inteligente basado en múltiples indicadores
-      const bullishSignals = [
-        marketData.trends.priceAboveEMA10,
-        marketData.trends.emaAlignment,
-        marketData.trends.macdBullish,
-        marketData.indicators.rsi < 70,
-        marketData.volumeAnalysis.volumeRatio > 1.2,
-      ].filter(Boolean).length
-
-      const fallbackAction = bullishSignals >= 3 ? "buy" : "sell"
+      // Fallback simple basado en precio
+      const priceChange = marketData.priceChange24h
+      const fallbackAction = priceChange > 0 ? "buy" : "sell"
+      const confidence = Math.min(Math.max(65, 65 + Math.abs(priceChange) * 2), 85)
 
       return {
         action: fallbackAction,
-        confidence: 65 + bullishSignals * 5,
+        confidence: confidence,
         amount: Math.min(Number.parseFloat(maxPositionSize) || 50, balance * 0.2),
         leverage: marketData.account.riskLevel === "conservative" ? 2 : 3,
-        reasoning: `Análisis automático: ${bullishSignals}/5 señales alcistas. ${fallbackAction === "buy" ? "Predominan señales de compra" : "Predominan señales de venta"}.`,
+        reasoning: `Análisis automático: Cambio 24h ${priceChange}%. ${fallbackAction === "buy" ? "Tendencia alcista" : "Tendencia bajista"}.`,
       }
     }
   }
@@ -703,229 +598,16 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
     if (isAIActive && apiKeys.openai) {
       // Análisis inicial inmediato
       analyzeMarket()
-      // Luego cada 30 segundos
+      // Luego cada 5 minutos
       interval = setInterval(analyzeMarket, 300000)
     }
 
     return () => {
       if (interval) clearInterval(interval)
     }
-  }, [isAIActive, apiKeys.openai, indicators])
+  }, [isAIActive, apiKeys.openai])
 
-  // Dibujar el gráfico
-  useEffect(() => {
-    if (!canvasRef.current || candles.length === 0) return
 
-    try {
-      const canvas = canvasRef.current
-      const ctx = canvas.getContext("2d")!
-      const { width, height } = canvas
-
-      // Limpiar canvas
-      ctx.clearRect(0, 0, width, height)
-
-      // Configurar dimensiones del gráfico
-      const padding = 60
-      const chartWidth = width - padding * 2
-      const chartHeight = height - padding * 2
-
-      // Calcular rangos de precios con navegación
-      const startIndex = Math.max(0, candles.length - visibleCandleCount - chartOffset)
-      const endIndex = Math.max(visibleCandleCount, candles.length - chartOffset)
-      const visibleCandles = candles.slice(startIndex, endIndex)
-
-      // Validar que haya velas visibles
-      if (visibleCandles.length === 0) return
-
-      const prices = visibleCandles.flatMap((c) => [c.high, c.low])
-
-      // Validar que haya precios válidos
-      if (prices.length === 0) return
-
-      const validPrices = prices.filter((p) => !isNaN(p) && isFinite(p) && p > 0)
-
-      // Si no hay precios válidos, salir
-      if (validPrices.length === 0) return
-
-      const minPrice = Math.min(...validPrices)
-      const maxPrice = Math.max(...validPrices)
-
-      // Validar rango de precios
-      if (minPrice === maxPrice) {
-        // Evitar división por cero
-        return
-      }
-
-      const priceRange = maxPrice - minPrice
-
-      const candleWidth = chartWidth / visibleCandles.length
-      const priceToY = (price: number) => {
-        if (isNaN(price) || !isFinite(price)) return padding
-        return padding + ((maxPrice - price) / priceRange) * chartHeight
-      }
-
-      // Dibujar solo etiquetas de precio (sin líneas del grid)
-      ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--foreground").trim() || "#000"
-      ctx.font = "12px sans-serif"
-      
-      // Etiquetas de precio sin líneas horizontales
-      for (let i = 0; i <= 10; i++) {
-        const y = padding + (chartHeight / 10) * i
-        const price = maxPrice - (priceRange / 10) * i
-        ctx.fillText(price.toFixed(2), 10, y + 4)
-      }
-
-      // Dibujar velas japonesas
-      visibleCandles.forEach((candle, index) => {
-        // Validar datos de la vela
-        if (isNaN(candle.open) || isNaN(candle.high) || isNaN(candle.low) || isNaN(candle.close)) {
-          return
-        }
-
-        const x = padding + index * candleWidth + candleWidth / 2
-        const openY = priceToY(candle.open)
-        const closeY = priceToY(candle.close)
-        const highY = priceToY(candle.high)
-        const lowY = priceToY(candle.low)
-
-        const isGreen = candle.close > candle.open
-        ctx.strokeStyle = isGreen ? "#10b981" : "#ef4444"
-        ctx.fillStyle = isGreen ? "#10b981" : "#ef4444"
-
-        // Mecha
-        ctx.lineWidth = 1
-        ctx.beginPath()
-        ctx.moveTo(x, highY)
-        ctx.lineTo(x, lowY)
-        ctx.stroke()
-
-        // Cuerpo de la vela
-        const bodyTop = Math.min(openY, closeY)
-        const bodyHeight = Math.abs(closeY - openY)
-        const bodyWidth = candleWidth * 0.8
-
-        ctx.fillRect(x - bodyWidth / 2, bodyTop, bodyWidth, bodyHeight)
-      })
-
-      // Dibujar indicadores EMA
-      const drawEMA = (ema: number[], color: string, lineWidth = 2) => {
-        if (ema.length === 0) return
-
-        ctx.strokeStyle = color
-        ctx.lineWidth = lineWidth
-        ctx.beginPath()
-
-        const visibleEMA = ema.slice(-visibleCandles.length)
-        let firstPointDrawn = false
-
-        visibleEMA.forEach((value, index) => {
-          if (isNaN(value) || !isFinite(value)) return
-
-          const x = padding + index * candleWidth + candleWidth / 2
-          const y = priceToY(value)
-
-          if (!firstPointDrawn) {
-            ctx.moveTo(x, y)
-            firstPointDrawn = true
-          } else {
-            ctx.lineTo(x, y)
-          }
-        })
-
-        ctx.stroke()
-      }
-
-      if (showIndicators.ema10) drawEMA(indicators.ema10, "#3b82f6", 2)
-      if (showIndicators.ema55) drawEMA(indicators.ema55, "#f59e0b", 2)
-      if (showIndicators.ema200) drawEMA(indicators.ema200, "#ef4444", 2)
-      if (showIndicators.ema365) drawEMA(indicators.ema365, "#8b5cf6", 2)
-
-      // Dibujar líneas de posiciones de IA
-      const aiPositions = positions.filter((p: any) => p.isAI)
-      aiPositions.forEach((position: any) => {
-        const entryY = priceToY(position.entryPrice)
-        const color = position.type === "long" ? "#10b981" : "#ef4444"
-        
-        // Línea horizontal del precio de entrada
-        ctx.strokeStyle = color
-        ctx.lineWidth = 2
-        ctx.setLineDash([5, 5]) // Línea punteada
-        ctx.beginPath()
-        ctx.moveTo(padding, entryY)
-        ctx.lineTo(width - padding, entryY)
-        ctx.stroke()
-        ctx.setLineDash([]) // Resetear línea punteada
-        
-        // Etiqueta con información de la posición
-        ctx.fillStyle = color
-        ctx.font = "12px sans-serif"
-        const label = `AI ${position.type.toUpperCase()} $${position.entryPrice.toFixed(2)} (${position.leverage}x)`
-        const labelWidth = ctx.measureText(label).width
-        
-        // Fondo para la etiqueta con color según el tipo
-        const backgroundColor = position.type === "long" ? "rgba(16, 185, 129, 0.8)" : "rgba(239, 68, 68, 0.8)"
-        ctx.fillStyle = backgroundColor
-        ctx.fillRect(width - padding - labelWidth - 10, entryY - 15, labelWidth + 8, 20)
-        
-        // Texto de la etiqueta en blanco para mejor contraste
-        ctx.fillStyle = "#ffffff"
-        ctx.fillText(label, width - padding - labelWidth - 6, entryY + 2)
-      })
-
-      // Precio actual
-      ctx.fillStyle = "#10b981"
-      ctx.font = "bold 16px sans-serif"
-      ctx.fillText(`$${currentPrice.toFixed(2)}`, width - 150, 30)
-    } catch (error) {
-      console.error("Error dibujando gráfico:", error)
-    }
-  }, [candles, indicators, showIndicators, currentPrice, chartOffset, visibleCandleCount, positions])
-
-  // Handlers para navegación con el ratón
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    setIsDragging(true)
-    setLastMouseX(e.clientX)
-  }
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDragging) return
-    
-    const deltaX = e.clientX - lastMouseX
-    const candlesToMove = Math.round(deltaX / 8) // Sensibilidad del movimiento
-    
-    setChartOffset(prev => {
-      const newOffset = prev - candlesToMove
-      const maxOffset = Math.max(0, candles.length - visibleCandleCount)
-      return Math.max(0, Math.min(maxOffset, newOffset))
-    })
-    
-    setLastMouseX(e.clientX)
-  }
-
-  const handleMouseUp = () => {
-    setIsDragging(false)
-  }
-
-  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault()
-    
-    if (e.ctrlKey) {
-      // Zoom con Ctrl + rueda
-      const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9
-      setVisibleCandleCount(prev => {
-        const newCount = Math.round(prev * zoomFactor)
-        return Math.max(20, Math.min(500, newCount))
-      })
-    } else {
-      // Navegación horizontal con rueda
-      const scrollAmount = e.deltaY > 0 ? 5 : -5
-      setChartOffset(prev => {
-        const newOffset = prev + scrollAmount
-        const maxOffset = Math.max(0, candles.length - visibleCandleCount)
-        return Math.max(0, Math.min(maxOffset, newOffset))
-      })
-    }
-  }
 
   return (
     <Card className="h-full p-4">
@@ -933,31 +615,9 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
         <h2 className="text-xl font-semibold">BTC/USDT - 1m</h2>
         <div className="flex items-center space-x-2">
           <Badge variant="outline" className="text-green-500">
-            ${currentPrice.toFixed(2)}
+            ${currentPrice > 0 ? currentPrice.toFixed(2) : "--"}
           </Badge>
-          <div className="flex space-x-1">
-            <Button
-              size="sm"
-              variant={showIndicators.ema10 ? "default" : "outline"}
-              onClick={() => setShowIndicators((prev) => ({ ...prev, ema10: !prev.ema10 }))}
-            >
-              EMA10
-            </Button>
-            <Button
-              size="sm"
-              variant={showIndicators.ema55 ? "default" : "outline"}
-              onClick={() => setShowIndicators((prev) => ({ ...prev, ema55: !prev.ema55 }))}
-            >
-              EMA55
-            </Button>
-            <Button
-              size="sm"
-              variant={showIndicators.ema200 ? "default" : "outline"}
-              onClick={() => setShowIndicators((prev) => ({ ...prev, ema200: !prev.ema200 }))}
-            >
-              EMA200
-            </Button>
-          </div>
+
         </div>
       </div>
 
@@ -968,22 +628,15 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
         </div>
       )}
 
-      <div className="text-sm text-muted-foreground mb-2">
-        💡 Arrastra para navegar • Rueda del ratón para desplazar • Ctrl + Rueda para zoom
+      <div 
+        ref={tradingViewRef}
+        className="w-full border rounded"
+        style={{ height: "400px" }}
+      >
+        <div className="flex items-center justify-center h-full text-muted-foreground">
+          Cargando gráfico de TradingView...
+        </div>
       </div>
-
-      <canvas
-        ref={canvasRef}
-        width={800}
-        height={400}
-        className="w-full border rounded cursor-grab active:cursor-grabbing"
-        style={{ maxHeight: "400px" }}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onWheel={handleWheel}
-      />
 
       {/* Panel de IA integrado - VERSIÓN COMPLETA */}
       <div className="mt-4 space-y-4">
@@ -1071,9 +724,23 @@ export function TradingChart({ apiKeys, balance, setBalance, positions, setPosit
                     )}
                   </div>
                   {aiDecisions[0].marketData && (
-                    <div className="text-xs text-muted-foreground">
-                      Precio: ${aiDecisions[0].marketData.price.toFixed(2)} | RSI:{" "}
-                      {aiDecisions[0].marketData.rsi.toFixed(1)} | Tendencia: {aiDecisions[0].marketData.trend}
+                    <div className="space-y-1">
+                      <div className="text-xs text-muted-foreground">
+                        Precio: ${aiDecisions[0].marketData.price ? aiDecisions[0].marketData.price.toFixed(2) : "--"} | RSI 1h:{" "}
+                        {aiDecisions[0].marketData.rsi ? aiDecisions[0].marketData.rsi.toFixed(1) : "--"} | Tendencia: {aiDecisions[0].marketData.trend || "--"}
+                      </div>
+                      {aiDecisions[0].riskManagement && (
+                        <div className="text-xs text-blue-600">
+                          🎯 Timeframe óptimo: {aiDecisions[0].riskManagement.optimalTimeframe || "--"} | 
+                          Riesgo liquidación: {aiDecisions[0].riskManagement.liquidationRisk || "--"}
+                        </div>
+                      )}
+                      {aiDecisions[0].marketContext && (
+                        <div className="text-xs text-green-600">
+                          📊 Confluencia: {aiDecisions[0].marketContext.confluenceScore || "--"}/10 | 
+                          Estructura: {aiDecisions[0].marketContext.marketStructure || "--"}
+                        </div>
+                      )}
                     </div>
                   )}
                   <div className="text-xs text-muted-foreground">
