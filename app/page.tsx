@@ -1,14 +1,11 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { TradingChart } from "@/components/trading-chart"
-import { TradingPanel } from "@/components/trading-panel"
-import { IndicatorsPanel } from "@/components/indicators-panel"
-import { PositionsPanel } from "@/components/positions-panel"
 import { SettingsPanel } from "@/components/settings-panel"
 import { AIBingXPanel } from "@/components/ai-bingx-panel"
+import { TradingChart } from "@/components/trading-chart"
 import { Button } from "@/components/ui/button"
-import { Moon, Sun, Settings, TrendingUp, BarChart3, Bot } from "lucide-react"
+import { Moon, Sun, Settings, TrendingUp } from "lucide-react"
 import { useTheme } from "next-themes"
 
 export default function TradingPlatform() {
@@ -48,9 +45,8 @@ export default function TradingPlatform() {
   }
 
   const tabs = [
-    { id: "chart", label: "Gráfico", icon: TrendingUp },
-    { id: "indicators", label: "Indicadores", icon: BarChart3 },
-    { id: "settings", label: "Configuración", icon: Settings },
+    { id: "chart", label: "Gráfico y Métricas" },
+    { id: "settings", label: "Configuración" },
   ]
 
   return (
@@ -73,7 +69,8 @@ export default function TradingPlatform() {
                 onClick={() => setActiveTab(tab.id)}
                 className="flex items-center space-x-2"
               >
-                <tab.icon className="h-4 w-4" />
+                {tab.id === "chart" && <TrendingUp className="h-4 w-4" />}
+                {tab.id === "settings" && <Settings className="h-4 w-4" />}
                 <span>{tab.label}</span>
               </Button>
             ))}
@@ -89,54 +86,25 @@ export default function TradingPlatform() {
         <div className="flex-1 flex">
           <div className="flex-1">
             {activeTab === "chart" && (
-              <div className="h-full flex flex-col">
-                <div className="flex-1 flex">
-                  <div className="flex-1">
-                    <TradingChart
-                      apiKeys={apiKeys}
-                      balance={balance}
-                      setBalance={setBalance}
-                      positions={positions}
-                      setPositions={setPositions}
-                    />
-                  </div>
-                  <div className="w-80 border-l">
-                    <TradingPanel
-                      balance={balance}
-                      setBalance={setBalance}
-                      positions={positions}
-                      setPositions={setPositions}
-                    />
-                  </div>
-                </div>
-                <div className="border-t">
-                  <AIBingXPanel 
-                    apiKeys={apiKeys}
-                    balance={balance}
-                    setBalance={setBalance}
-                    positions={positions}
-                    setPositions={setPositions}
-                  />
-                </div>
+              <div className="space-y-6">
+                <TradingChart apiKeys={apiKeys} />
+                <AIBingXPanel
+                  apiKeys={apiKeys}
+                  balance={balance}
+                  setBalance={setBalance}
+                  positions={positions}
+                  setPositions={setPositions}
+                />
               </div>
             )}
-
-            {activeTab === "indicators" && <IndicatorsPanel />}
-
-
-
             {activeTab === "settings" && (
-              <SettingsPanel 
-                apiKeys={apiKeys} 
+              <SettingsPanel
+                apiKeys={apiKeys}
                 setApiKeys={saveApiKeysToStorage}
                 clearApiKeys={clearApiKeysFromStorage}
               />
             )}
           </div>
-        </div>
-
-        <div className="w-80 border-l">
-          <PositionsPanel positions={positions} setPositions={setPositions} setBalance={setBalance} />
         </div>
       </main>
     </div>
