@@ -10,12 +10,20 @@ import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Bot, Play, Pause, TrendingUp, TrendingDown } from "lucide-react"
 
+interface TradingMark {
+  timestamp: number
+  type: 'LONG' | 'SHORT'
+  price: number
+  id: string
+}
+
 interface AITradingPanelProps {
   apiKeys: { openai: string }
   balance: number
   setBalance: React.Dispatch<React.SetStateAction<number>>
   positions: any[]
   setPositions: React.Dispatch<React.SetStateAction<any[]>>
+  onAddTradingMark?: (mark: TradingMark) => void
 }
 
 interface AIDecision {
@@ -41,7 +49,7 @@ interface PositionHistory {
   reason?: string
 }
 
-export function AITradingPanel({ apiKeys, balance, setBalance, positions, setPositions }: AITradingPanelProps) {
+export function AITradingPanel({ apiKeys, balance, setBalance, positions, setPositions, onAddTradingMark }: AITradingPanelProps) {
   const [isAIActive, setIsAIActive] = useState(false)
   const [aiDecisions, setAIDecisions] = useState<AIDecision[]>([])
   const [currentAnalysis, setCurrentAnalysis] = useState("")
@@ -122,6 +130,17 @@ export function AITradingPanel({ apiKeys, balance, setBalance, positions, setPos
       }
 
       setAIDecisions((prev) => [newDecision, ...prev.slice(0, 9)])
+
+      // Agregar marca de trading automáticamente si hay una recomendación válida
+      if (onAddTradingMark && aiAnalysis.action !== 'hold' && aiAnalysis.confidence > 60) {
+        const tradingMark: TradingMark = {
+          timestamp: Date.now(),
+          type: (aiAnalysis.action === 'buy' ? 'LONG' : 'SHORT') as 'LONG' | 'SHORT',
+          price: newCurrentPrice,
+          id: `ai-trading-${Date.now()}`
+        }
+        onAddTradingMark(tradingMark)
+      }
 
       // Ejecutar automáticamente si está habilitado
       if (autoTradingEnabled && aiAnalysis.confidence > 70) {
@@ -449,12 +468,12 @@ export function AITradingPanel({ apiKeys, balance, setBalance, positions, setPos
                     </Badge>
                     <span className="font-semibold">${position.amount} ({position.leverage}x)</span>
                     <span className="text-sm text-muted-foreground">
-                      Entrada: ${position.entryPrice.toFixed(1000)}
+                      Entrada: ${position.entryPrice.toFixed(2)}
                     </span>
                   </div>
                   <div className="text-right">
                     <div className={`font-semibold ${pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      ${pnl.toFixed(2)} ({pnlPercentage.toFixed(10)}%)
+                      ${pnl.toFixed(2)} ({pnlPercentage.toFixed(2)}%)
                     </div>
                     <div className="text-xs text-muted-foreground">
                       {new Date(position.timestamp).toLocaleString()}

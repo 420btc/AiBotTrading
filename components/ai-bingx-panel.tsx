@@ -9,12 +9,20 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import { Bot, TrendingUp, TrendingDown, AlertTriangle, CheckCircle } from "lucide-react"
 
+interface TradingMark {
+  timestamp: number
+  type: 'LONG' | 'SHORT'
+  price: number
+  id: string
+}
+
 interface AIBingXPanelProps {
   apiKeys: { openai: string; bingxApiKey: string; bingxSecretKey: string }
   balance: number
   setBalance: React.Dispatch<React.SetStateAction<number>>
   positions: any[]
   setPositions: React.Dispatch<React.SetStateAction<any[]>>
+  onAddTradingMark?: (mark: TradingMark) => void
 }
 
 interface AIRecommendation {
@@ -34,7 +42,7 @@ interface AIRecommendation {
   confluenceScore?: number
 }
 
-export function AIBingXPanel({ apiKeys, balance, setBalance, positions, setPositions }: AIBingXPanelProps) {
+export function AIBingXPanel({ apiKeys, balance, setBalance, positions, setPositions, onAddTradingMark }: AIBingXPanelProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [aiRecommendation, setAiRecommendation] = useState<AIRecommendation | null>(null)
   const [isExecuting, setIsExecuting] = useState(false)
@@ -141,6 +149,17 @@ export function AIBingXPanel({ apiKeys, balance, setBalance, positions, setPosit
       const aiAnalysis = await callOpenAI(marketData)
       setAiRecommendation(aiAnalysis)
       setLastAnalysis(new Date().toLocaleTimeString())
+      
+      // Agregar marca de trading automáticamente si hay una recomendación válida
+      if (onAddTradingMark && aiAnalysis.action !== 'hold' && aiAnalysis.confidence > 60) {
+        const tradingMark: TradingMark = {
+          timestamp: Date.now(),
+          type: aiAnalysis.action === 'long' ? 'LONG' : 'SHORT',
+          price: currentPrice,
+          id: `ai-bingx-${Date.now()}`
+        }
+        onAddTradingMark(tradingMark)
+      }
 
     } catch (error) {
       console.error("Error en análisis de IA:", error)

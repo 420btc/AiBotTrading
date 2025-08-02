@@ -3,10 +3,19 @@
 import { useState, useEffect } from "react"
 import { SettingsPanel } from "@/components/settings-panel"
 import { AIBingXPanel } from "@/components/ai-bingx-panel"
+import { AITradingPanel } from "@/components/ai-trading-panel"
 import { TradingChart } from "@/components/trading-chart"
+import { EMATouchAnalyzer } from "@/components/ema-touch-analyzer"
 import { Button } from "@/components/ui/button"
-import { Moon, Sun, Settings, TrendingUp } from "lucide-react"
+import { Moon, Sun, Settings, TrendingUp, Activity } from "lucide-react"
 import { useTheme } from "next-themes"
+
+interface TradingMark {
+  timestamp: number
+  type: 'LONG' | 'SHORT'
+  price: number
+  id: string
+}
 
 export default function TradingPlatform() {
   const [activeTab, setActiveTab] = useState<string>("chart")
@@ -18,6 +27,7 @@ export default function TradingPlatform() {
     bingxSecretKey: ""
   })
   const { theme, setTheme } = useTheme()
+  const [tradingMarks, setTradingMarks] = useState<TradingMark[]>([])
 
   // Cargar API keys desde localStorage al inicializar
   useEffect(() => {
@@ -44,8 +54,18 @@ export default function TradingPlatform() {
     localStorage.removeItem('trading-platform-api-keys')
   }
 
+  const handleAddTradingMark = (mark: TradingMark) => {
+    setTradingMarks(prev => [...prev, mark])
+  }
+
+  const handleClearTradingMarks = () => {
+    setTradingMarks([])
+  }
+
   const tabs = [
     { id: "chart", label: "Gráfico y Métricas" },
+    { id: "ai-trading", label: "IA Trading" },
+    { id: "ema-analysis", label: "Análisis EMA" },
     { id: "settings", label: "Configuración" },
   ]
 
@@ -70,6 +90,7 @@ export default function TradingPlatform() {
                 className="flex items-center space-x-2"
               >
                 {tab.id === "chart" && <TrendingUp className="h-4 w-4" />}
+                {tab.id === "ema-analysis" && <Activity className="h-4 w-4" />}
                 {tab.id === "settings" && <Settings className="h-4 w-4" />}
                 <span>{tab.label}</span>
               </Button>
@@ -93,8 +114,34 @@ export default function TradingPlatform() {
                   setBalance={setBalance}
                   positions={positions}
                   setPositions={setPositions}
+                  onAddTradingMark={handleAddTradingMark}
                 />
-                <TradingChart apiKeys={apiKeys} />
+                <TradingChart 
+                  apiKeys={apiKeys} 
+                  tradingMarks={tradingMarks}
+                  onAddTradingMark={handleAddTradingMark}
+                  onClearTradingMarks={handleClearTradingMarks}
+                />
+              </div>
+            )}
+            {activeTab === "ai-trading" && (
+              <div className="p-6">
+                <AITradingPanel
+                  apiKeys={apiKeys}
+                  balance={balance}
+                  setBalance={setBalance}
+                  positions={positions}
+                  setPositions={setPositions}
+                  onAddTradingMark={handleAddTradingMark}
+                />
+              </div>
+            )}
+            {activeTab === "ema-analysis" && (
+              <div className="p-6">
+                <EMATouchAnalyzer 
+                  apiKeys={apiKeys} 
+                  onAddTradingMark={handleAddTradingMark}
+                />
               </div>
             )}
             {activeTab === "settings" && (
